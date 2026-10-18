@@ -418,39 +418,48 @@ function sayToggle(){ const on=DB.autoSay!==false; return `<button class="row-sw
 function bindSayToggle(){ const b=$("#saySw"); if(!b) return; b.onclick=()=>{ DB.autoSay=(DB.autoSay===false); save(); const on=DB.autoSay!==false; b.setAttribute("aria-pressed",on); b.querySelector(".sw").classList.toggle("on",on); if(!on) hush(); toast(on?"Vorlesen an":"Vorlesen aus"); }; }
 
 /* ---------- PAARE (matching) ---------- */
+function pm(){ if(!DB.pm) DB.pm={}; return DB.pm; }
+function weightedPick(pool,n){
+  if(DB.focusMiss===false) return shuffle(pool).slice(0,n);
+  const m=pm(); const items=pool.map(id=>({id,k:Math.pow(Math.random(),1/(1+3*Math.min(m[id]||0,5)))}));
+  return items.sort((a,b)=>b.k-a.k).slice(0,n).map(x=>x.id);
+}
+function missToggle(){ const on=DB.focusMiss!==false; return `<button class="row-sw" id="missSw" aria-pressed="${on}" style="margin:0 0 10px"><span class="tx"><b>Fehler öfter zeigen</b><span class="muted small">Wörter, die du falsch zuordnest, kommen öfter und am Ende nochmal.</span></span><span class="sw ${on?"on":""}"><i></i></span></button>`; }
+function bindMissToggle(){ const b=$("#missSw"); if(!b) return; b.onclick=()=>{ DB.focusMiss=(DB.focusMiss===false); save(); const on=DB.focusMiss!==false; b.setAttribute("aria-pressed",on); b.querySelector(".sw").classList.toggle("on",on); toast(on?"Fehler kommen öfter":"Zufällige Auswahl"); }; }
+
 function startPairs(ids,opt){
   const rounds=[]; const list=shuffle(ids); for(let i=0;i<list.length;i+=5) rounds.push(list.slice(i,i+5));
-  session={kind:"pairs",rounds,r:0,miss:0,opt};
+  session={kind:"pairs",rounds,r:0,miss:0,opt,missed:new Set(),extra:false};
   pairRound();
 }
 function pairRound(){
   const s=session; const batch=s.rounds[s.r].map(id=>BY[id]);
   const L=shuffle(batch), R=shuffle(batch);
   const body=`<p class="muted" style="margin:4px 2px 4px">Tippe ein deutsches Wort, dann die passende Bedeutung.${TTS?" Deutsche Wörter werden vorgelesen.":""}</p>
-   <p class="muted small" style="margin:0 2px 8px">Runde ${s.r+1} von ${s.rounds.length}</p>
-   ${sayToggle()}
+   <p class="muted small" style="margin:0 2px 8px">${s.extra&&s.r>=s.extraStart?"Fehlerrunde":`Runde ${s.r+1} von ${s.rounds.length}`}</p>
+   ${sayToggle()}${missToggle()}
    <div class="pairs"><div class="col">${L.map(w=>`<button class="pc de" data-id="${w.id}" data-s="L">${head(w)}</button>`).join("")}</div>
    <div class="col">${R.map(w=>`<button class="pc" data-id="${w.id}" data-s="R">${esc(w.en)}</button>`).join("")}</div></div><div id="out"></div>`;
   shell(s.opt.title||"Paare",body,{back:s.opt.backLabel||"Heute",backTo:s.opt.backTo||"home"});
-  bindSayToggle();
+  bindSayToggle(); bindMissToggle();
   let sel=null, done=0;
   document.querySelectorAll(".pc").forEach(b=>b.onclick=()=>{
     if(b.classList.contains("ok")) return;
     if(b.dataset.s==="L") autoSay(full(BY[+b.dataset.id]));
     if(!sel||sel.dataset.s===b.dataset.s){ if(sel) sel.classList.remove("sel"); sel=b; b.classList.add("sel"); return; }
-    if(sel.dataset.id===b.dataset.id){ [sel,b].forEach(x=>{x.classList.remove("sel");x.classList.add("ok");x.disabled=true;}); sel=null; done++;
+    if(sel.dataset.id===b.dataset.id){ const mid=+b.dataset.id; if(!s.missed.has(mid)&&pm()[mid]){pm()[mid]=Math.max(0,pm()[mid]-1);save();} [sel,b].forEach(x=>{x.classList.remove("sel");x.classList.add("ok");x.disabled=true;}); sel=null; done++;
       if(done===batch.length){ $("#out").innerHTML=`<button class="btn primary" id="nx">${s.r+1<s.rounds.length?"Nächste Runde":(s.opt.nextLabel||"Fertig")}</button>`;
-        $("#nx").onclick=()=>{ if(s.r+1<s.rounds.length){s.r++;pairRound();} else pairsDone(); }; }
-    } else { s.miss++; const a=sel,c=b; [a,c].forEach(x=>{x.classList.remove("sel");x.classList.add("no");}); sel=null; setTimeout(()=>[a,c].forEach(x=>x.classList.remove("no")),350); }
+        $("#nx").onclick=()=>{ if(s.r+1<s.rounds.length){s.r++;pairRound();} else if(DB.focusMiss!==false&&!s.extra&&s.missed.size){ s.extra=true; s.extraStart=s.rounds.length; const ids=[...s.missed]; for(let i=0;i<ids.length;i+=5) s.rounds.push(ids.slice(i,i+5)); s.r++; toast("Fehlerrunde: deine falschen Paare nochmal"); pairRound(); } else pairsDone(); }; }
+    } else { s.miss++; [sel,b].forEach(x=>{const id=+x.dataset.id; pm()[id]=(pm()[id]||0)+1; s.missed.add(id);}); save(); const a=sel,c=b; [a,c].forEach(x=>{x.classList.remove("sel");x.classList.add("no");}); sel=null; setTimeout(()=>[a,c].forEach(x=>x.classList.remove("no")),350); }
   });
 }
 function pairsDone(){
-  const s=session; const n=s.rounds.reduce((a,r)=>a+r.length,0);
+  const s=session; const n=s.rounds.reduce((a,r)=>a+r.length,0)-(s.extra?s.missed.size:0);
   if(s.opt.next){ toast(s.miss?`${n} Paare · ${s.miss} Fehler`:`${n} Paare ohne Fehler`); s.opt.next(); return; }
   const body=`<div class="result"><div class="pct">${s.miss}</div><div class="lbl">${s.miss===1?"Fehler":"Fehler"} bei ${n} Paaren</div></div>
    <button class="btn primary" id="again">Nochmal 20 Paare</button><button class="btn ghost" id="back2">Zurück zu Üben</button>`;
   shell("Paare",body); session=null;
-  $("#again").onclick=()=>{ const pool=practicePool(); startPairs(shuffle(pool).slice(0,20),{title:"Paare",backLabel:"Üben",backTo:"ueben"}); };
+  $("#again").onclick=()=>{ const pool=practicePool(); startPairs(weightedPick(pool,20),{title:"Paare",backLabel:"Üben",backTo:"ueben"}); };
   $("#back2").onclick=()=>go("ueben");
 }
 
@@ -469,14 +478,14 @@ function ueben(){
    ${!TTS?'<p class="muted small">Hören ist in diesem Browser nicht verfügbar.</p>':""}`;
   shell("Üben",body);
   document.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{pr[b.dataset.k]=b.dataset.v;ueben();});
-  $("#go").onclick=()=>{ const ids=shuffle(pool).slice(0,20); if(pr.mode==="paa") startPairs(ids,{title:"Paare",backLabel:"Üben",backTo:"ueben"}); else startQuiz(ids,"prac",{srs:false,mode:pr.mode,title:"Üben"}); };
+  $("#go").onclick=()=>{ const ids=pr.mode==="paa"?weightedPick(pool,20):shuffle(pool).slice(0,20); if(pr.mode==="paa") startPairs(ids,{title:"Paare",backLabel:"Üben",backTo:"ueben"}); else startQuiz(ids,"prac",{srs:false,mode:pr.mode,title:"Üben"}); };
 }
 function practicePool(){
   return W.filter(w=>{
     if(pr.theme!=="all"&&w.t!==pr.theme) return false;
     const c=DB.cards[w.id];
     if(pr.src==="started"&&!c) return false;
-    if(pr.src==="weak"&&!(c&&(c.lv<=1||c.bad>c.ok))) return false;
+    if(pr.src==="weak"&&!((c&&(c.lv<=1||c.bad>c.ok))||(DB.pm&&DB.pm[w.id]>0))) return false;
     if(pr.mode==="art"&&!modesFor(w).includes("art")) return false;
     return true;
   }).map(w=>w.id);
@@ -521,6 +530,7 @@ function mehr(){
     <div class="item"><span class="ic">B1</span><span class="tx"><span class="tt">Quelle</span><span class="ss">Goethe-Zertifikat B1 Wortliste: Artikel, Plural, Verbformen und Beispielsätze. Deine ${788} A1-Wörter sind nicht dabei.</span></span></div>
    </div>
    <div class="h2">Ton</div>${sayToggle()}
+   <div class="h2">Paare</div>${missToggle()}
    <div class="h2">Sicherung</div>
    <p class="muted small">Dein Fortschritt liegt nur in diesem Browser. Kopiere den Code und speichere ihn, zum Beispiel in einer Notiz. Auf einem anderen Gerät fügst du ihn unten ein.</p>
    <textarea class="ta" id="exp" readonly aria-label="Sicherungscode">${esc(btoa(unescape(encodeURIComponent(JSON.stringify(DB)))))}</textarea>
@@ -529,7 +539,7 @@ function mehr(){
    <button class="btn ghost" id="load">Fortschritt laden</button>
    <div class="h2">Zurücksetzen</div>
    <button class="btn ghost" id="reset">Allen Fortschritt löschen</button>`;
-  shell("Mehr",body); bindSayToggle();
+  shell("Mehr",body); bindSayToggle(); bindMissToggle();
   $("#copy").onclick=()=>{const t=$("#exp");const v=t.value;const fall=()=>{t.focus();t.select();toast("Code markiert. Jetzt kopieren.");};try{navigator.clipboard.writeText(v).then(()=>toast("Code kopiert"),fall);}catch(e){fall();}};
   $("#load").onclick=()=>{try{const p=JSON.parse(decodeURIComponent(escape(atob($("#imp").value.trim()))));if(!p||typeof p.cards!=="object")throw 0;DB=Object.assign({cards:{},days:{},pause:false,streak:{last:"",n:0}},p);save();toast("Fortschritt geladen");go("home");}catch(e){toast("Der Code ist ungültig. Bitte ganz einfügen.");}};
   let armed=false; $("#reset").onclick=e=>{ if(!armed){armed=true;e.target.textContent="Nochmal tippen: wirklich alles löschen";e.target.classList.add("bad");return;} DB={cards:{},days:{},pause:false,streak:{last:"",n:0}}; save(); toast("Gelöscht"); go("home"); };
