@@ -163,6 +163,8 @@ button{cursor:pointer;border:none;background:none;padding:0}
 .langbtn{display:flex;gap:2px;background:var(--surface-2);border-radius:10px;padding:3px;flex:0 0 auto}
 .langbtn b{font-size:12px;font-weight:800;padding:4px 7px;border-radius:7px;color:var(--muted)}
 .langbtn b.on{background:var(--petrol);color:var(--on-petrol)}
+.hero.ghosty{background:var(--surface);color:var(--ink);border:1.5px solid var(--petrol-soft)}
+.hero.ghosty .ic{color:var(--petrol-soft)}
 .lv.miss{background:var(--bad-tint);color:var(--bad)}
 .empty{text-align:center;color:var(--muted);padding:30px 10px}
 .study .cnt{color:var(--muted);font-weight:700;font-size:14px;text-align:center;margin-bottom:8px}
@@ -202,7 +204,7 @@ const KEY="b1-wortschatz-v1";
 const FRESH=()=>({cards:{},days:{},pause:false,streak:{last:"",n:0},miss:{},missLvl:1,lang:"de"});
 let DB=FRESH(), persistOK=true;
 try{const raw=localStorage.getItem(KEY); if(raw){DB=Object.assign(FRESH(),JSON.parse(raw));} localStorage.setItem(KEY+"-t","1"); localStorage.removeItem(KEY+"-t");}catch(e){persistOK=false;}
-function migrate(){ if(DB.pm){ for(const k in DB.pm) DB.miss[k]=(DB.miss[k]||0)+DB.pm[k]; delete DB.pm; } if(DB.focusMiss===false){ DB.missLvl=0; } delete DB.focusMiss; if(!DB.miss) DB.miss={}; if(DB.missLvl==null) DB.missLvl=1; if(!DB.lang) DB.lang="de"; }
+function migrate(){ if(DB.pm){ for(const k in DB.pm) DB.miss[k]=(DB.miss[k]||0)+DB.pm[k]; delete DB.pm; } if(DB.focusMiss===false){ DB.missLvl=0; } delete DB.focusMiss; if(!DB.miss) DB.miss={}; if(DB.missLvl==null) DB.missLvl=1; if(!DB.lang) DB.lang="de"; const first=Object.keys(DB.days||{}).sort()[0]||today(); for(const k in DB.cards){ if(!DB.cards[k].d) DB.cards[k].d=first; } }
 migrate();
 function save(){ if(!persistOK) return; try{localStorage.setItem(KEY,JSON.stringify(DB));}catch(e){persistOK=false;} }
 
@@ -221,7 +223,7 @@ function dueIds(){const t=today();return Object.keys(DB.cards).filter(id=>DB.car
 function newToday(){return DB.days[today()]||0;}
 function newLeft(){return DB.pause?0:Math.max(0,PER_DAY-newToday());}
 function nextNew(n){const out=[];for(const id of SEQ){if(!DB.cards[id]){out.push(id);if(out.length>=n)break;}}return out;}
-function introduce(id){ if(DB.cards[id]) return; DB.cards[id]={lv:0,due:today(),seen:1,ok:0,bad:0}; DB.days[today()]=(DB.days[today()]||0)+1; }
+function introduce(id){ if(DB.cards[id]) return; DB.cards[id]={lv:0,due:today(),seen:1,ok:0,bad:0,d:today()}; DB.days[today()]=(DB.days[today()]||0)+1; }
 function grade(id,okFirst){
   const c=DB.cards[id]; if(!c) return;
   if(okFirst){ c.lv=Math.min(5,c.lv+1); c.ok++; } else { c.lv=c.lv>2?1:Math.max(0,c.lv-1); c.bad++; }
@@ -229,6 +231,7 @@ function grade(id,okFirst){
   touchStreak(); save();
 }
 function touchStreak(){const t=today(); if(DB.streak.last===t) return; DB.streak.n = DB.streak.last===addDays(t,-1) ? DB.streak.n+1 : 1; DB.streak.last=t;}
+function introducedSince(day){ return Object.keys(DB.cards).filter(id=>DB.cards[id].d>=day).map(Number); }
 function counts(){let started=0,mastered=0;for(const id in DB.cards){started++; if(DB.cards[id].lv>=4) mastered++;}return {started,mastered};}
 
 /* ---------- mistakes: remembered in every mode ---------- */
@@ -335,6 +338,7 @@ function shell(title,body,opts={}){
 }
 
 /* ---------- HOME ---------- */
+function drillToday(){ pr.src="today"; pr.theme="all"; go("ueben"); }
 function themeProgress(t){const ids=W.filter(w=>w.t===t).map(w=>w.id);let s=0,m=0;ids.forEach(id=>{const c=DB.cards[id];if(c){s++;if(c.lv>=4)m++;}});return {n:ids.length,s,m};}
 function home(){
   const due=dueIds().length, left=newLeft(), {started,mastered}=counts();
@@ -349,6 +353,7 @@ function home(){
    <div class="big"><div class="n ${due?"":"zero"}">${due}</div><div class="l">${due?L("Wörter zum<br>Wiederholen","words to<br>review"):L("Alles<br>wiederholt","All<br>reviewed")}</div></div>
    <button class="hero" id="goRev"><span class="ic">${due}</span><span><span class="tt">${L("Wiederholen","Review")}</span><span class="ss">${due?L("Fällige Wörter zuerst. Du kannst jederzeit aufhören.","Due words first. You can stop at any time."):L("Nichts fällig. Tippe zum freien Üben.","Nothing due. Tap to practise freely.")}</span></span></button>
    <button class="hero alt" id="goNew" ${nextIds.length?"":"disabled"}><span class="ic">${left||"+"+PACK}</span><span><span class="tt">${left?L("Neue Wörter","New words"):L("Mehr neue Wörter","More new words")}</span><span class="ss">${newSub}</span></span></button>
+   ${introducedSince(today()).length?`<button class="hero ghosty" id="drillT"><span class="ic">${introducedSince(today()).length}</span><span><span class="tt">${L("Heutige neue Wörter üben","Drill today's new words")}</span><span class="ss">${L("In jeder Art: Paare, Hören, Artikel, Schreiben, Verstehen.","Every way: pairs, listening, articles, writing, meaning.")}</span></span></button>`:""}
    <button class="row-sw" id="pauseSw" aria-pressed="${DB.pause}"><span class="tx"><b>${L("Neue Wörter pausieren","Pause new words")}</b><span class="muted small">${L("Wenn die Wiederholungen zu viel werden.","When reviews get too much.")}</span></span><span class="sw ${DB.pause?"on":""}"><i></i></span></button>
    ${TTS?`<button class="row-sw" id="sndTest"><span class="tx"><b>${L("Ton testen","Test sound")}</b><span class="muted small">${L("Tippe hier. Du solltest „Guten Morgen“ hören.","Tap here. You should hear “Guten Morgen”.")}</span></span><span class="spk">${ICON.spk}</span></button>`:`<div class="tts-note">${L("Ton ist in dieser Ansicht nicht verfügbar. Öffne die App in Chrome, dann funktionieren Vorlesen und Hören.","Sound isn't available in this view. Open the app in Chrome and reading aloud will work.")}</div>`}
    <div class="strip"><div><b>${started}</b><span>${L("von","of")} ${W.length} ${L("begonnen","started")}</span></div><div><b>${mastered}</b><span>${L("sicher (Stufe 4–5)","secure (level 4–5)")}</span></div><div><b>${DB.streak.last===today()||DB.streak.last===addDays(today(),-1)?DB.streak.n:0}</b><span>${L("Tage am Stück","days in a row")}</span></div></div>
@@ -358,6 +363,7 @@ function home(){
   shell("B1-Wortschatz",body,{redraw:home});
   $("#goRev").onclick=()=>{ if(due) startReview(); else go("ueben"); };
   $("#goNew").onclick=()=>startNew();
+  const dt=$("#drillT"); if(dt) dt.onclick=drillToday;
   $("#pauseSw").onclick=()=>{DB.pause=!DB.pause;save();home();};
   const st=$("#sndTest"); if(st) st.onclick=()=>{ if(!say("Guten Morgen")) toast(NO_SOUND()); };
   document.querySelectorAll("[data-theme-open]").forEach(b=>b.onclick=()=>{listTheme=b.dataset.themeOpen;go("liste");});
@@ -454,10 +460,12 @@ function finish(){
   const draw=()=>{
     const body=`<div class="result"><div class="pct">${pct}%</div><div class="lbl">${L("beim ersten Versuch richtig","right first time")}</div><p class="muted">${s.total} ${L("Wörter","words")} · ${s.right} ${L("sofort gewusst","known straight away")}</p></div>
      ${moreNew?`<button class="btn primary" id="more">${newLeft()>0?L(`Nächste ${Math.min(PACK,newLeft())} neue Wörter`,`Next ${Math.min(PACK,newLeft())} new words`):L(`Noch ${PACK} neue Wörter (über dem Tagesziel)`,`${PACK} more new words (beyond the daily goal)`)}</button>`:""}
+     ${s.kind==="new"?`<button class="btn petrol" id="drill">${L("Heutige neue Wörter in allen Arten üben","Drill today's new words every way")}</button>`:""}
      ${s.srs&&due?`<button class="btn petrol" id="rev">${due} ${L("fällige Wiederholungen","reviews due")}</button>`:""}
      <button class="btn ghost" id="home">${s.srs?L("Zurück zu Heute","Back to Today"):L("Zurück zu Üben","Back to Practice")}</button>`;
     shell(quizTitle(s.kind),body,{redraw:draw});
     if(moreNew) $("#more").onclick=()=>startNew();
+    const dr=$("#drill"); if(dr) dr.onclick=drillToday;
     if(s.srs&&due) $("#rev").onclick=()=>startReview();
     $("#home").onclick=()=>go(s.srs?"home":"ueben");
   };
@@ -509,39 +517,43 @@ function pairsDone(){
   session=null;
   const draw=()=>{
     const body=`<div class="result"><div class="pct">${s.miss}</div><div class="lbl">${L("Fehler bei","mistakes in")} ${n} ${L("Paaren","pairs")}</div></div>
-     <button class="btn primary" id="again">${L("Nochmal 20 Paare","20 more pairs")}</button><button class="btn ghost" id="back2">${L("Zurück zu Üben","Back to Practice")}</button>`;
+     <button class="btn primary" id="again">${L("Nochmal","Again")}</button><button class="btn ghost" id="back2">${L("Zurück zu Üben","Back to Practice")}</button>`;
     shell(MODE("paa"),body,{redraw:draw});
-    $("#again").onclick=()=>{ startPairs(pickSet(practicePool(),20),{title:MODE("paa"),backLabel:L("Üben","Practice"),backTo:"ueben"}); };
+    $("#again").onclick=()=>{ const pool=practicePool(); startPairs(pickSet(pool,sessN(pool.length)),{title:MODE("paa"),backLabel:L("Üben","Practice"),backTo:"ueben"}); };
     $("#back2").onclick=()=>go("ueben");
   };
   draw();
 }
 
 /* ---------- ÜBEN (free practice, no effect on the review schedule) ---------- */
-let pr={mode:"mix",theme:"all",src:"all"};
+let pr={mode:"mix",theme:"all",src:"all",n:"20"};
 function ueben(){
   const pool=practicePool();
   const chip=(k,v,l)=>`<button class="chip" data-k="${k}" data-v="${v}" aria-pressed="${pr[k]===v}">${esc(l)}</button>`;
   const body=`<p class="muted" style="margin-top:4px">${L("Freies Üben ändert deinen Wiederholungsplan nicht.","Free practice doesn't change your review schedule.")}</p>
    <div class="h2">${L("Abfrage","Mode")}</div><div class="chips">${chip("mode","mix",L("Gemischt","Mixed"))}${MODE_KEYS.map(k=>k==="hor"&&!TTS?"":chip("mode",k,MODE(k))).join("")}</div>
-   <div class="h2">${L("Welche Wörter","Which words")}</div><div class="chips">${chip("src","all",L("Alle B1-Wörter","All B1 words"))}${chip("src","started",L("Schon begonnen","Already started"))}${chip("src","weak",L("Schwache","Weak words"))}</div>
+   <div class="h2">${L("Welche Wörter","Which words")}</div><div class="chips">${chip("src","today",L(`Heute neu (${introducedSince(today()).length})`,`New today (${introducedSince(today()).length})`))}${chip("src","week",L(`Letzte 7 Tage (${introducedSince(addDays(today(),-6)).length})`,`Last 7 days (${introducedSince(addDays(today(),-6)).length})`))}${chip("src","started",L("Schon begonnen","Already started"))}${chip("src","weak",L("Schwache","Weak words"))}${chip("src","all",L("Alle B1-Wörter","All B1 words"))}</div>
+   <div class="h2">${L("Wie viele","How many")}</div><div class="chips">${chip("n","10","10")}${chip("n","20","20")}${chip("n","40","40")}${chip("n","all",L("Alle","All"))}</div>
    <div class="h2">${L("Thema","Theme")}</div><div class="chips">${chip("theme","all",L("Alle","All"))}${Object.keys(THEMES_DE).map(k=>chip("theme",k,THEME(k))).join("")}</div>
    ${missLevelCtl()}
    ${pr.mode==="art"?`<p class="muted small">${L("Artikel fragt nur Nomen ab.","Articles only tests nouns.")}</p>`:""}
-   <button class="btn primary" id="go" ${pool.length?"":"disabled"}>${pool.length?(pr.mode==="paa"?L(`20 Paare zuordnen (aus ${pool.length})`,`Match 20 pairs (from ${pool.length})`):L(`20 Wörter üben (aus ${pool.length})`,`Practise 20 words (from ${pool.length})`)):L("Keine Wörter für diese Auswahl","No words for this selection")}</button>
-   ${!pool.length?`<p class="muted small">${pr.src==="started"?L("Du hast noch keine Wörter begonnen. Wähle „Alle B1-Wörter“ oder lerne zuerst neue Wörter unter Heute.","You haven't started any words yet. Choose “All B1 words”, or learn new words under Today first."):pr.src==="weak"?L("Noch keine schwachen Wörter. Wähle eine andere Gruppe.","No weak words yet. Choose another group."):L("Wähle ein anderes Thema.","Choose another theme.")}</p>`:""}
+   <button class="btn primary" id="go" ${pool.length?"":"disabled"}>${pool.length?((()=>{const k=sessN(pool.length); return pr.mode==="paa"?L(`${k} Paare zuordnen (aus ${pool.length})`,`Match ${k} pairs (from ${pool.length})`):L(`${k} Wörter üben (aus ${pool.length})`,`Practise ${k} words (from ${pool.length})`);})()):L("Keine Wörter für diese Auswahl","No words for this selection")}</button>
+   ${!pool.length?`<p class="muted small">${pr.src==="today"||pr.src==="week"?L("In dieser Zeit hast du noch keine neuen Wörter gelernt. Lerne zuerst ein Päckchen unter Heute.","You haven't learned any new words in this period. Learn a pack under Today first."):pr.src==="started"?L("Du hast noch keine Wörter begonnen. Wähle „Alle B1-Wörter“ oder lerne zuerst neue Wörter unter Heute.","You haven't started any words yet. Choose “All B1 words”, or learn new words under Today first."):pr.src==="weak"?L("Noch keine schwachen Wörter. Wähle eine andere Gruppe.","No weak words yet. Choose another group."):L("Wähle ein anderes Thema.","Choose another theme.")}</p>`:""}
    <p class="muted small">${missCount()} ${L("Wörter mit Fehlern gemerkt.","words with mistakes remembered.")}</p>
    ${!TTS?`<p class="muted small">${L("Hören ist in diesem Browser nicht verfügbar.","Listening isn't available in this browser.")}</p>`:""}`;
   shell(L("Üben","Practice"),body,{redraw:ueben});
   document.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{pr[b.dataset.k]=b.dataset.v;ueben();});
   bindMissLevel(ueben);
-  $("#go").onclick=()=>{ const ids=pickSet(pool,20); if(pr.mode==="paa") startPairs(ids,{title:MODE("paa"),backLabel:L("Üben","Practice"),backTo:"ueben"}); else startQuiz(ids,"prac",{srs:false,mode:pr.mode}); };
+  $("#go").onclick=()=>{ const ids=(pr.src==="today"||pr.src==="week")?shuffle(pool).slice(0,sessN(pool.length)):pickSet(pool,sessN(pool.length)); if(pr.mode==="paa") startPairs(ids,{title:MODE("paa"),backLabel:L("Üben","Practice"),backTo:"ueben"}); else startQuiz(ids,"prac",{srs:false,mode:pr.mode}); };
 }
+function sessN(len){ return pr.n==="all"?len:Math.min(len,+pr.n); }
 function practicePool(){
   return W.filter(w=>{
     if(pr.theme!=="all"&&w.t!==pr.theme) return false;
     const c=DB.cards[w.id];
     if(pr.src==="started"&&!c) return false;
+    if(pr.src==="today"&&!(c&&c.d===today())) return false;
+    if(pr.src==="week"&&!(c&&c.d>=addDays(today(),-6))) return false;
     if(pr.src==="weak"&&!((c&&(c.lv<=1||c.bad>c.ok))||DB.miss[w.id])) return false;
     if(pr.mode==="art"&&!modesFor(w).includes("art")) return false;
     return true;
