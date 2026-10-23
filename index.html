@@ -80,6 +80,13 @@ button{cursor:pointer;border:none;background:none;padding:0}
 .sw i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .2s}
 .sw.on{background:var(--amber)} .sw.on i{left:23px}
 .meter{padding:8px 2px;display:block;width:100%;text-align:left}
+.pick-l{font-size:13px;font-weight:800;color:var(--muted);margin:14px 2px 6px}
+.today-tag{font-style:normal;font-size:11px;font-weight:800;background:var(--amber);color:#1b1300;border-radius:99px;padding:1px 7px;margin-left:8px;vertical-align:2px}
+.meter .top{align-items:baseline}.meter .top span{margin-left:auto}
+.meter-ed{display:flex;align-items:center;gap:8px}.meter-ed .meter{flex:1;min-width:0}
+.mv,.mv-ph{display:flex;gap:6px;flex:none;width:94px}
+.mv button{width:44px;height:44px;border-radius:12px;background:var(--surface);border:1.5px solid var(--line);font-size:20px;font-weight:800;color:var(--ink)}
+.mv button:disabled{opacity:.3}
 .meter .top{display:flex;justify-content:space-between;gap:10px;font-weight:700;font-size:15px}
 .meter .top span{color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .bar{height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin-top:6px;display:flex}
@@ -192,8 +199,8 @@ const LEVELS=["A1","A2","B1"];
 const BY = {}; W.forEach(w=>BY[w.id]=w);
 
 /* Daily order: themed words in life-in-Germany order, with the small words spread evenly through every day. */
-function buildSeq(WL){
-  const main=[]; ORDER.forEach(t=>WL.filter(w=>w.t===t).forEach(w=>main.push(w.id)));
+function buildSeq(WL,order){
+  const main=[]; (order||ORDER).forEach(t=>WL.filter(w=>w.t===t).forEach(w=>main.push(w.id)));
   const small=WL.filter(w=>w.t==="klein").map(w=>w.id);
   const out=[]; let i=0,j=0; const ratio=small.length/WL.length;
   while(i<main.length||j<small.length){
@@ -202,15 +209,23 @@ function buildSeq(WL){
   }
   return out;
 }
-const SEQS={}; LEVELS.forEach(l=>SEQS[l]=buildSeq(W.filter(w=>w.lvl===l)));
 
 /* ---------- storage (guarded) ---------- */
 const KEY="b1-wortschatz-v1";
-const FRESH=()=>({cards:{},days:{},pause:false,streak:{last:"",n:0},miss:{},missLvl:1,lang:"de",level:"B1"});
+const FRESH=()=>({cards:{},days:{},pause:false,streak:{last:"",n:0},miss:{},missLvl:1,lang:"de",level:"B1",pick:{},order:{}});
 let DB=FRESH(), persistOK=true;
 try{const raw=localStorage.getItem(KEY); if(raw){DB=Object.assign(FRESH(),JSON.parse(raw));} localStorage.setItem(KEY+"-t","1"); localStorage.removeItem(KEY+"-t");}catch(e){persistOK=false;}
-function migrate(){ if(DB.pm){ for(const k in DB.pm) DB.miss[k]=(DB.miss[k]||0)+DB.pm[k]; delete DB.pm; } if(DB.focusMiss===false){ DB.missLvl=0; } delete DB.focusMiss; if(!DB.miss) DB.miss={}; if(DB.missLvl==null) DB.missLvl=1; if(!DB.lang) DB.lang="de"; if(!LEVELS.includes(DB.level)) DB.level="B1"; const first=Object.keys(DB.days||{}).sort()[0]||today(); for(const k in DB.cards){ if(!DB.cards[k].d) DB.cards[k].d=first; } }
+function migrate(){ if(DB.pm){ for(const k in DB.pm) DB.miss[k]=(DB.miss[k]||0)+DB.pm[k]; delete DB.pm; } if(DB.focusMiss===false){ DB.missLvl=0; } delete DB.focusMiss; if(!DB.miss) DB.miss={}; if(DB.missLvl==null) DB.missLvl=1; if(!DB.lang) DB.lang="de"; if(!DB.pick) DB.pick={}; if(!DB.order) DB.order={}; if(!LEVELS.includes(DB.level)) DB.level="B1"; const first=Object.keys(DB.days||{}).sort()[0]||today(); for(const k in DB.cards){ if(!DB.cards[k].d) DB.cards[k].d=first; } }
 migrate();
+
+/* ---------- theme order and today's theme (per level, your choice) ---------- */
+function themeOrder(l){ const c=(DB.order[l]||[]).filter(t=>ORDER.includes(t)); return c.concat(ORDER.filter(t=>!c.includes(t))); }
+const SEQS={}; function rebuildSeq(l){ SEQS[l]=buildSeq(W.filter(w=>w.lvl===l),themeOrder(l)); }
+LEVELS.forEach(rebuildSeq);
+function moveTheme(t,dir){ const o=levelThemes().filter(x=>x!=="klein"); const i=o.indexOf(t), j=i+dir; if(i<0||j<0||j>=o.length) return; [o[i],o[j]]=[o[j],o[i]]; DB.order[DB.level]=o; rebuildSeq(DB.level); save(); }
+function resetOrder(){ delete DB.order[DB.level]; rebuildSeq(DB.level); save(); }
+const PICK=()=>{ const p=DB.pick[DB.level]; return p&&themeLeft(p)>0?p:""; };
+function themeLeft(t){ let n=0; for(const w of W) if(w.lvl===DB.level&&w.t===t&&!DB.cards[w.id]) n++; return n; }
 function save(){ if(!persistOK) return; try{localStorage.setItem(KEY,JSON.stringify(DB));}catch(e){persistOK=false;} }
 
 /* ---------- interface language (the words you learn always stay German) ---------- */
@@ -232,7 +247,12 @@ function addDays(s,n){const [y,m,d]=s.split("-").map(Number);const x=new Date(y,
 function dueIds(){const t=today();return Object.keys(DB.cards).filter(id=>DB.cards[id].due<=t).map(Number).sort((a,b)=>DB.cards[a].due<DB.cards[b].due?-1:1);}
 function newToday(){return DB.days[today()]||0;}
 function newLeft(){return DB.pause?0:Math.max(0,PER_DAY-newToday());}
-function nextNew(n){const out=[];for(const id of SEQS[DB.level]){if(!DB.cards[id]){out.push(id);if(out.length>=n)break;}}return out;}
+function nextNew(n){
+  const out=[], p=PICK(), seq=SEQS[DB.level];
+  if(p) for(const id of seq){ if(!DB.cards[id]&&BY[id].t===p){ out.push(id); if(out.length>=n) return out; } }
+  for(const id of seq){ if(!DB.cards[id]&&!out.includes(id)){ out.push(id); if(out.length>=n) break; } }
+  return out;
+}
 function introduce(id){ if(DB.cards[id]) return; DB.cards[id]={lv:0,due:today(),seen:1,ok:0,bad:0,d:today()}; DB.days[today()]=(DB.days[today()]||0)+1; }
 function grade(id,okFirst){
   const c=DB.cards[id]; if(!c) return;
@@ -365,13 +385,16 @@ function home(){
    <div class="big"><div class="n ${due?"":"zero"}">${due}</div><div class="l">${due?L("Wörter zum<br>Wiederholen","words to<br>review"):L("Alles<br>wiederholt","All<br>reviewed")}</div></div>
    <button class="hero" id="goRev"><span class="ic">${due}</span><span><span class="tt">${L("Wiederholen","Review")}</span><span class="ss">${due?L("Fällige Wörter zuerst. Du kannst jederzeit aufhören.","Due words first. You can stop at any time."):L("Nichts fällig. Tippe zum freien Üben.","Nothing due. Tap to practise freely.")}</span></span></button>
    <button class="hero alt" id="goNew" ${nextIds.length?"":"disabled"}><span class="ic">${left||"+"+PACK}</span><span><span class="tt">${left?L("Neue Wörter","New words"):L("Mehr neue Wörter","More new words")}</span><span class="ss">${newSub}</span></span></button>
+   <div class="pick-l">${L("Neue Wörter heute aus","Today's new words from")}</div>
+   <div class="chips" id="pickRow"><button class="chip" data-pick="" aria-pressed="${!PICK()}">${L("Automatisch","Automatic")}</button>${levelThemes().map(t=>{const n=themeLeft(t);return n?`<button class="chip" data-pick="${t}" aria-pressed="${PICK()===t}">${esc(THEME(t))} · ${n}</button>`:"";}).join("")}</div>
    ${introducedSince(today()).length?`<button class="hero ghosty" id="drillT"><span class="ic">${introducedSince(today()).length}</span><span><span class="tt">${L("Heutige neue Wörter üben","Drill today's new words")}</span><span class="ss">${L("In jeder Art: Paare, Hören, Artikel, Schreiben, Verstehen.","Every way: pairs, listening, articles, writing, meaning.")}</span></span></button>`:""}
    <button class="row-sw" id="pauseSw" aria-pressed="${DB.pause}"><span class="tx"><b>${L("Neue Wörter pausieren","Pause new words")}</b><span class="muted small">${L("Wenn die Wiederholungen zu viel werden.","When reviews get too much.")}</span></span><span class="sw ${DB.pause?"on":""}"><i></i></span></button>
    ${TTS?`<button class="row-sw" id="sndTest"><span class="tx"><b>${L("Ton testen","Test sound")}</b><span class="muted small">${L("Tippe hier. Du solltest „Guten Morgen“ hören.","Tap here. You should hear “Guten Morgen”.")}</span></span><span class="spk">${ICON.spk}</span></button>`:`<div class="tts-note">${L("Ton ist in dieser Ansicht nicht verfügbar. Öffne die App in Chrome, dann funktionieren Vorlesen und Hören.","Sound isn't available in this view. Open the app in Chrome and reading aloud will work.")}</div>`}
    <div class="strip"><div><b>${started}</b><span>${L("von","of")} ${LW().length} ${L("begonnen","started")}</span></div><div><b>${mastered}</b><span>${L("sicher (Stufe 4–5)","secure (level 4–5)")}</span></div><div><b>${DB.streak.last===today()||DB.streak.last===addDays(today(),-1)?DB.streak.n:0}</b><span>${L("Tage am Stück","days in a row")}</span></div></div>
    <div class="h2">${L("Tag","Day")} ${Math.min(dayNo,totalDays)} ${L("von","of")} ${totalDays} · ${L("Themen","Themes")}</div>
-   <div>${ORDER.concat(["klein"]).map(t=>{const p=themeProgress(t);return p.n?meterRow(t,p):"";}).join("")}</div>
-   <p class="muted small">${L("Grün = sicher, Petrol = begonnen. Kleine Wörter kommen jeden Tag dazu.","Green = secure, teal = started. Small words are added every day.")}</p>`;
+   <div>${themeOrder(DB.level).concat(["klein"]).map(t=>{const p=themeProgress(t);return p.n?meterRow(t,p):"";}).join("")}</div>
+   <p class="muted small">${editOrder?L("Mit den Pfeilen verschiebst du ein Thema. Automatisch lernst du die Themen von oben nach unten. Kleine Wörter kommen immer jeden Tag dazu.","Use the arrows to move a theme. On Automatic you learn the themes from top to bottom. Small words are always added every day."):L("Grün = sicher, Petrol = begonnen. Automatisch geht es von oben nach unten. Kleine Wörter kommen jeden Tag dazu.","Green = secure, teal = started. Automatic goes from top to bottom. Small words are added every day.")}</p>
+   <div class="row2"><button class="btn ${editOrder?"primary":"ghost"}" id="ordBtn">${editOrder?L("Fertig","Done"):L("Reihenfolge ändern","Change order")}</button>${editOrder&&DB.order[DB.level]?`<button class="btn ghost" id="ordReset">${L("Zurücksetzen","Reset")}</button>`:""}</div>`;
   shell(`${LV()}-Wortschatz`,body,{redraw:home});
   $("#goRev").onclick=()=>{ if(due) startReview(); else go("ueben"); };
   $("#goNew").onclick=()=>startNew();
@@ -379,8 +402,19 @@ function home(){
   $("#pauseSw").onclick=()=>{DB.pause=!DB.pause;save();home();};
   const st=$("#sndTest"); if(st) st.onclick=()=>{ if(!say("Guten Morgen")) toast(NO_SOUND()); };
   document.querySelectorAll("[data-theme-open]").forEach(b=>b.onclick=()=>{listTheme=b.dataset.themeOpen;go("liste");});
+  document.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ const t=b.dataset.pick; if(t) DB.pick[DB.level]=t; else delete DB.pick[DB.level]; save(); home(); });
+  document.querySelectorAll("[data-mv]").forEach(b=>b.onclick=()=>{ const sc=$("#app").scrollTop, wy=window.scrollY; moveTheme(b.dataset.t,+b.dataset.mv); home(); $("#app").scrollTop=sc; window.scrollTo(0,wy); });
+  $("#ordBtn").onclick=()=>{ editOrder=!editOrder; home(); };
+  const orr=$("#ordReset"); if(orr) orr.onclick=()=>{ resetOrder(); home(); };
+  const pk=$("#pickRow [aria-pressed=\"true\"]"), pr0=$("#pickRow"); if(pk&&pr0) pr0.scrollLeft=Math.max(0,pk.offsetLeft-pr0.offsetLeft-(pr0.clientWidth-pk.offsetWidth)/2);
 }
-function meterRow(t,p){const ms=p.n?100*p.m/p.n:0, ss=p.n?100*(p.s-p.m)/p.n:0;return `<button class="meter" data-theme-open="${t}"><div class="top">${esc(THEME(t))}<span>${p.s}/${p.n}</span></div><div class="bar"><i class="m" style="width:${ms}%"></i><i class="s" style="width:${ss}%"></i></div></button>`;}
+let editOrder=false;
+function meterRow(t,p){const ms=p.n?100*p.m/p.n:0, ss=p.n?100*(p.s-p.m)/p.n:0;
+  const bar=`<div class="top">${esc(THEME(t))}${PICK()===t?`<em class="today-tag">${L("heute","today")}</em>`:""}<span>${p.s}/${p.n}</span></div><div class="bar"><i class="m" style="width:${ms}%"></i><i class="s" style="width:${ss}%"></i></div>`;
+  if(!editOrder) return `<button class="meter" data-theme-open="${t}">${bar}</button>`;
+  if(t==="klein") return `<div class="meter-ed"><div class="meter">${bar}</div><span class="mv-ph"></span></div>`;
+  const o=levelThemes().filter(x=>x!=="klein"), i=o.indexOf(t);
+  return `<div class="meter-ed"><div class="meter">${bar}</div><span class="mv"><button data-mv="-1" data-t="${t}" ${i<=0?"disabled":""} aria-label="${L("Nach oben","Move up")}">↑</button><button data-mv="1" data-t="${t}" ${i>=o.length-1?"disabled":""} aria-label="${L("Nach unten","Move down")}">↓</button></span></div>`;}
 
 /* ---------- NEW WORDS: study a pack, match it, then quiz it ---------- */
 function startNew(){
@@ -559,7 +593,7 @@ function ueben(){
   $("#go").onclick=()=>{ const ids=(pr.src==="today"||pr.src==="week")?shuffle(pool).slice(0,sessN(pool.length)):pickSet(pool,sessN(pool.length)); if(pr.mode==="paa") startPairs(ids,{title:MODE("paa"),backLabel:L("Üben","Practice"),backTo:"ueben"}); else startQuiz(ids,"prac",{srs:false,mode:pr.mode}); };
 }
 function sessN(len){ return pr.n==="all"?len:Math.min(len,+pr.n); }
-function levelThemes(){ const s=new Set(LW().map(w=>w.t)); return ORDER.concat(["klein"]).filter(t=>s.has(t)); }
+function levelThemes(){ const s=new Set(LW().map(w=>w.t)); return themeOrder(DB.level).concat(["klein"]).filter(t=>s.has(t)); }
 function practicePool(){
   return LW().filter(w=>{
     if(pr.theme!=="all"&&w.t!==pr.theme) return false;
@@ -633,8 +667,8 @@ function mehr(){
   document.querySelectorAll("[data-lang]").forEach(b=>b.onclick=()=>{ DB.lang=b.dataset.lang; save(); renderTabs(); mehr(); });
   const cm=$("#clrMiss"); if(cm) cm.onclick=()=>{ DB.miss={}; save(); toast(L("Fehler gelöscht","Mistakes cleared")); mehr(); };
   $("#copy").onclick=()=>{const t=$("#exp");const v=t.value;const fall=()=>{t.focus();t.select();toast(L("Code markiert. Jetzt kopieren.","Code selected. Copy it now."));};try{navigator.clipboard.writeText(v).then(()=>toast(L("Code kopiert","Code copied")),fall);}catch(e){fall();}};
-  $("#load").onclick=()=>{try{const p=JSON.parse(decodeURIComponent(escape(atob($("#imp").value.trim()))));if(!p||typeof p.cards!=="object")throw 0;DB=Object.assign(FRESH(),p);migrate();save();toast(L("Fortschritt geladen","Progress loaded"));go("home");}catch(e){toast(L("Der Code ist ungültig. Bitte ganz einfügen.","That code isn't valid. Please paste all of it."));}};
-  let armed=false; $("#reset").onclick=e=>{ if(!armed){armed=true;e.target.textContent=L("Nochmal tippen: wirklich alles löschen","Tap again: really delete everything");e.target.classList.add("bad");return;} const lang=DB.lang; DB=FRESH(); DB.lang=lang; save(); toast(L("Gelöscht","Deleted")); go("home"); };
+  $("#load").onclick=()=>{try{const p=JSON.parse(decodeURIComponent(escape(atob($("#imp").value.trim()))));if(!p||typeof p.cards!=="object")throw 0;DB=Object.assign(FRESH(),p);migrate();LEVELS.forEach(rebuildSeq);save();toast(L("Fortschritt geladen","Progress loaded"));go("home");}catch(e){toast(L("Der Code ist ungültig. Bitte ganz einfügen.","That code isn't valid. Please paste all of it."));}};
+  let armed=false; $("#reset").onclick=e=>{ if(!armed){armed=true;e.target.textContent=L("Nochmal tippen: wirklich alles löschen","Tap again: really delete everything");e.target.classList.add("bad");return;} const lang=DB.lang; DB=FRESH(); DB.lang=lang; LEVELS.forEach(rebuildSeq); save(); toast(L("Gelöscht","Deleted")); go("home"); };
 }
 
 renderTabs(); go("home");
