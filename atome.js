@@ -137,7 +137,7 @@ function patStats(id) {
   return { o, h, f, n, score: n ? (o + h * 0.5) / n : -1, atoms: atoms.length, act: atoms.filter(a => !a.done).length };
 }
 function patsSorted() {
-  return Object.keys(DB.pats).map(id => Object.assign({ id }, patStats(id))).filter(p => p.atoms || p.n)
+  return Object.keys(DB.pats).map(id => Object.assign({ id, name: DB.pats[id].name }, patStats(id))).filter(p => p.atoms || p.n)
     .sort((a, b) => (a.n ? 0 : 1) - (b.n ? 0 : 1) || a.score - b.score || b.atoms - a.atoms);
 }
 function patBar(p) { return p.n ? `<div class="pbar"><i class="o" style="width:${p.o / p.n * 100}%"></i><i class="h" style="width:${p.h / p.n * 100}%"></i><i class="f" style="width:${p.f / p.n * 100}%"></i></div>` : `<div class="pbar"></div>`; }
@@ -147,7 +147,7 @@ function atomPats(a) { const s = new Set(); a.sents.forEach(x => x.fp.forEach(id
 /* ---------- the request for Claude ---------- */
 function claudePrompt(ctx) {
   atomsReady();
-  const known = patsSorted().slice(0, 25).map(p => p.name);
+  const known = patsSorted().map(p => p.name).filter(Boolean).slice(0, 25);
   const P = [];
   P.push("Bitte korrigiere meinen deutschen Text. Mein Ziel: flüssig Deutsch sprechen und schreiben (B1).");
   P.push("Art: " + ctx.kindDe + (ctx.title ? " – " + ctx.title : ""));
