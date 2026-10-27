@@ -168,6 +168,8 @@ function claudePrompt(ctx) {
   P.push("- (3 kurze Aufgaben zum Umformen für spätere Wiederholungen, z. B. „im Perfekt“ oder „aus Sicht von Anna“)");
   P.push("B1-VERSION:");
   P.push("(derselbe Inhalt eine Stufe besser, natürlich und auf B1-Niveau)");
+  P.push("TITEL:");
+  P.push("(ein kurzer deutscher Titel für den Text, 2–4 Wörter)");
   return P.join("\n");
 }
 
@@ -182,7 +184,7 @@ function parseNums(t) {
 }
 function parseClaude(raw) {
   const s = String(raw || "").replace(/\r/g, "").replace(/\*\*|__/g, "").split("\n").filter(l => !/^\s*```/.test(l)).join("\n");
-  const re = /^[ \t>#]*(KORREKTUR|SÄTZE|SAETZE|ENGLISCH|FEHLERMUSTER|UMFORMEN|B1[- ]VERSION)\b[ \t]*:?[ \t]*/gim;
+  const re = /^[ \t>#]*(KORREKTUR|SÄTZE|SAETZE|ENGLISCH|FEHLERMUSTER|UMFORMEN|B1[- ]VERSION|TITEL)\b[ \t]*:?[ \t]*/gim;
   const marks = []; let m;
   while ((m = re.exec(s))) marks.push({ k: m[1].toUpperCase().replace("SAETZE", "SÄTZE").replace("B1 VERSION", "B1-VERSION"), start: m.index, body: m.index + m[0].length });
   // the last KORREKTUR wins (a quoted prompt may contain one too); without one, the first SÄTZE
@@ -217,7 +219,8 @@ function parseClaude(raw) {
     return { name, nums };
   }).filter(x => x.name);
   const up = out["B1-VERSION"] && !isPh(out["B1-VERSION"]) ? lines(out["B1-VERSION"]).join("\n") : "";
-  return { sents, fp, tr: list(out.UMFORMEN), up, corr: korr ? plain(takeGuess(korr).t) : sents.map(x => plain(x.de)).join(" ") };
+  const title = out.TITEL && !isPh(out.TITEL) ? lines(out.TITEL)[0].replace(/^[„“"]|[“”"]$/g, "").trim() : "";
+  return { sents, fp, tr: list(out.UMFORMEN), up, title, corr: korr ? plain(takeGuess(korr).t) : sents.map(x => plain(x.de)).join(" ") };
 }
 
 /* ---------- the atom editor (after a correction, and for "Bearbeiten") ---------- */
@@ -225,71 +228,70 @@ function parseClaude(raw) {
 function stateFromParse(p, title) {
   const names = p.fp.map(x => x.name);
   return {
-    t: title || "", tr: p.tr.slice(), up: p.up || "", pats: names.slice(),
+    t: title || p.title || autoTitle(p.sents), tr: p.tr.slice(), up: p.up || "", pats: names.slice(),
     sents: p.sents.map((s, i) => ({ de: s.de, en: s.en, kw: s.kw, g: !!s.g, pn: p.fp.filter(f => !f.nums.length || f.nums.includes(i + 1)).map(f => f.name) }))
   };
 }
+function autoTitle(sents) {
+  const w = plain((sents[0] || {}).de || "").replace(/[.,!?;:"„“]/g, "").split(/\s+/).filter(Boolean);
+  return w.length ? w.slice(0, 4).join(" ") + (w.length > 4 ? " …" : "") : "";
+}
 function stateFromAtom(a) {
   const pats = atomPats(a).map(patName);
-  return { t: a.t, tr: (a.tr || []).slice(), up: a.up || "", pats, sents: a.sents.map(s => ({ de: s.de, en: s.en, kw: s.kw, g: false, pn: s.fp.map(patName).filter(Boolean), box: s.box })) };
+  return { t: a.t, tr: (a.tr || []).slice(), up: a.up || "", pats, sents: a.sents.map(s => ({ de: s.de, en: s.en, kw: s.kw, g: false, pend: s.pend || "", pn: s.fp.map(patName).filter(Boolean), box: s.box })) };
 }
 function atomEditor(host, st, opt) {
+  const open = {};
   const draw = () => {
     const guesses = st.sents.filter(s => s.g).length;
     host.innerHTML = `
       <label class="lab2" for="edT">${L("Titel", "Title")}</label><input class="tin" id="edT" value="${esc(st.t)}">
-      ${guesses ? `<div class="hint" style="margin-top:12px"><b>${L("Bitte prüfen:", "Please check:")}</b> ${L(`Bei ${guesses === 1 ? "einem Satz" : guesses + " Sätzen"} musste Claude raten, was du meintest. Bestätige oder ändere ${guesses === 1 ? "ihn" : "sie"}, bevor du speicherst.`, `Claude had to guess what you meant in ${guesses === 1 ? "one sentence" : guesses + " sentences"}. Confirm or change ${guesses === 1 ? "it" : "them"} before saving.`)}</div>` : ""}
-      <div class="sec-h">${L("Fehlermuster", "Mistake patterns")}</div>
-      <div class="pchips">${st.pats.map((n, i) => `<button class="pchip" aria-pressed="true" data-rmp="${i}">${esc(n)} ✕</button>`).join("") || `<span class="muted small">${L("Noch keine.", "None yet.")}</span>`}</div>
-      <div class="row2" style="margin-top:8px"><input class="tin" id="edNP" style="margin-top:0" placeholder="${L("Muster hinzufügen", "Add a pattern")}" list="edPL"><button class="btn ghost" id="edAdd" style="flex:0 0 auto;width:auto;padding:0 16px">+</button></div>
-      <datalist id="edPL">${Object.values(DB.pats).map(p => `<option value="${esc(p.name)}">`).join("")}</datalist>
-      <div class="sec-h">${L("Sätze", "Sentences")}</div>
-      <p class="muted small" style="margin:0 2px">${L("[Eckige Klammern] markieren deine korrigierten Stellen. Sie werden später zu Lücken. Tippe ein Muster an, um es dem Satz zuzuordnen.", "[Square brackets] mark your corrected spots. Later they become the gaps. Tap a pattern to link it to the sentence.")}</p>
+      <p class="muted small" style="margin:12px 2px 0">${guesses ? L(`Prüf kurz, ob das Englisch stimmt. Bei ${guesses === 1 ? "einem Satz" : guesses + " Sätzen"} musste Claude raten: Sag, ob es stimmt.`, `Check the English is what you meant. Claude had to guess ${guesses === 1 ? "one sentence" : guesses + " sentences"}: say whether it's right.`) : L("Prüf kurz, ob das Englisch stimmt. So wirst du später abgefragt: Englisch sehen, Deutsch sagen.", "Check the English is what you meant. That's how you'll be tested later: see the English, say the German.")}</p>
       ${st.sents.map((s, i) => `<div class="scard ${s.g ? "guess" : ""}">
-        <div class="no"><span>${L("Satz", "Sentence")} ${i + 1}</span><button class="pchip" data-del="${i}">${L("Löschen", "Delete")}</button></div>
-        ${s.g ? `<div class="gban"><b>${L("Geraten.", "Guessed.")}</b> ${L("Meintest du das? Ändere den Satz, wenn nicht.", "Is this what you meant? Change the sentence if not.")}<div class="row2"><button class="btn petrol" data-ok="${i}">${L("Ja, so meinte ich das", "Yes, that's what I meant")}</button></div></div>` : ""}
-        <textarea class="ta2" data-f="de" data-i="${i}" aria-label="${L("Deutscher Satz", "German sentence")}">${esc(s.de)}</textarea>
-        <input class="tin" data-f="en" data-i="${i}" value="${esc(s.en)}" placeholder="${L("Englische Bedeutung", "English meaning")}">
-        <input class="tin" data-f="kw" data-i="${i}" value="${esc(s.kw)}" placeholder="${L("Stichwörter, z. B. Freizeit · pflanzen · Baum", "Key words, e.g. Freizeit · pflanzen · Baum")}">
-        ${st.pats.length ? `<div class="pchips">${st.pats.map(n => `<button class="pchip" data-tg="${i}" data-n="${esc(n)}" aria-pressed="${s.pn.includes(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
+        <div class="no"><span>${i + 1}</span>${s.g ? "" : `<button class="pchip" data-ed="${i}">${open[i] ? L("Fertig", "Done") : L("Ändern", "Change")}</button>`}</div>
+        ${open[i] ? `<textarea class="ta2" data-f="de" data-i="${i}" aria-label="${L("Deutscher Satz", "German sentence")}">${esc(s.de)}</textarea>
+          <input class="tin" data-f="en" data-i="${i}" value="${esc(s.en)}" placeholder="${L("Englische Bedeutung", "English meaning")}">
+          <button class="pchip" data-del="${i}" style="margin-top:8px">${L("Satz löschen", "Delete sentence")}</button>`
+        : `<div style="font-size:17px;font-weight:700;line-height:1.4">${esc(plain(s.de))}</div>${s.en ? `<div class="muted" style="margin-top:2px">${esc(s.en)}</div>` : ""}`}
+        ${s.g ? `<div class="gban"><b>${L("Geraten. Meintest du das?", "Guessed. Is this what you meant?")}</b>
+          ${s.no ? `<textarea class="ta2" data-f="pend" data-i="${i}" placeholder="${L("Was wolltest du sagen? Englisch reicht.", "What did you want to say? English is fine.")}">${esc(s.pend || "")}</textarea>
+            <div class="row2"><button class="btn ghost" data-back="${i}">${L("Doch, es stimmt", "Actually, it's right")}</button><button class="btn petrol" data-keep="${i}">${L("Claude fragen", "Ask Claude")}</button></div>`
+          : `<div class="row2"><button class="btn petrol" data-ok="${i}">${L("Ja, stimmt", "Yes, right")}</button><button class="btn ghost" data-no="${i}">${L("Nein", "No")}</button></div>`}</div>` : ""}
+        ${s.pend && !s.g ? `<div class="gban">${L("Wird von Claude geprüft: ", "Claude will check: ")}<b>${esc(s.pend)}</b></div>` : ""}
       </div>`).join("")}
-      <button class="btn ghost" id="edAddS">${L("+ Satz hinzufügen", "+ Add a sentence")}</button>
-      <label class="lab2" for="edR">${L("Umformen (eins pro Zeile)", "Transformations (one per line)")}</label><textarea class="ta2" id="edR">${esc(st.tr.join("\n"))}</textarea>
-      <label class="lab2" for="edU">${L("B1-Version (eine Stufe höher, optional)", "B1 version (one step up, optional)")}</label><textarea class="ta2" id="edU">${esc(st.up)}</textarea>
       <button class="btn primary" id="edSave">${esc(opt.saveLabel)}</button>
-      ${opt.cancel ? `<button class="btn ghost" id="edCancel" style="margin-top:8px">${L("Abbrechen", "Cancel")}</button>` : ""}
-      ${opt.note ? `<p class="muted small">${esc(opt.note)}</p>` : ""}`;
-    const keep = () => { st.t = $("#edT", host).value; st.tr = $("#edR", host).value.split("\n").map(x => x.trim()).filter(Boolean); st.up = $("#edU", host).value.trim(); };
+      ${opt.cancel ? `<button class="btn ghost" id="edCancel" style="margin-top:8px">${L("Abbrechen", "Cancel")}</button>` : ""}`;
     host.querySelectorAll("[data-f]").forEach(el => el.addEventListener("input", () => { st.sents[+el.dataset.i][el.dataset.f] = el.value; }));
-    ["#edT", "#edR", "#edU"].forEach(s => $(s, host).addEventListener("input", keep));
-    const redo = () => { keep(); const y = window.scrollY; draw(); window.scrollTo(0, y); };
-    host.querySelectorAll("[data-rmp]").forEach(b => b.onclick = () => { const n = st.pats[+b.dataset.rmp]; st.pats.splice(+b.dataset.rmp, 1); st.sents.forEach(s => s.pn = s.pn.filter(x => x !== n)); redo(); });
-    const add = () => { const v = $("#edNP", host).value.trim(); if (!v) return; const ex = st.pats.find(n => pNorm(n) === pNorm(v)); if (!ex) st.pats.push(v); redo(); };
-    $("#edAdd", host).onclick = add; $("#edNP", host).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); add(); } });
-    host.querySelectorAll("[data-tg]").forEach(b => b.onclick = () => { const s = st.sents[+b.dataset.tg], n = b.dataset.n; s.pn = s.pn.includes(n) ? s.pn.filter(x => x !== n) : s.pn.concat(n); b.setAttribute("aria-pressed", s.pn.includes(n)); });
-    host.querySelectorAll("[data-ok]").forEach(b => b.onclick = () => { st.sents[+b.dataset.ok].g = false; redo(); });
+    $("#edT", host).addEventListener("input", e => { st.t = e.target.value; });
+    const redo = () => { const y = window.scrollY; draw(); window.scrollTo(0, y); };
+    host.querySelectorAll("[data-ed]").forEach(b => b.onclick = () => { const i = +b.dataset.ed; open[i] = !open[i]; redo(); });
+    host.querySelectorAll("[data-ok]").forEach(b => b.onclick = () => { const s = st.sents[+b.dataset.ok]; s.g = false; s.no = false; s.pend = ""; redo(); });
+    host.querySelectorAll("[data-no]").forEach(b => b.onclick = () => { st.sents[+b.dataset.no].no = true; redo(); const t = host.querySelector(`[data-f="pend"][data-i="${b.dataset.no}"]`); if (t) t.focus(); });
+    host.querySelectorAll("[data-back]").forEach(b => b.onclick = () => { const s = st.sents[+b.dataset.back]; s.no = false; s.pend = ""; redo(); });
+    host.querySelectorAll("[data-keep]").forEach(b => b.onclick = () => { const s = st.sents[+b.dataset.keep]; s.pend = (s.pend || "").trim(); if (!s.pend) { toast(L("Schreib kurz, was du meintest.", "Write briefly what you meant.")); return; } s.g = false; s.no = false; redo(); });
     let armed = -1;
-    host.querySelectorAll("[data-del]").forEach(b => b.onclick = () => { const i = +b.dataset.del; if (armed !== i) { armed = i; b.textContent = L("Wirklich?", "Sure?"); return; } st.sents.splice(i, 1); redo(); });
-    $("#edAddS", host).onclick = () => { st.sents.push({ de: "", en: "", kw: "", g: false, pn: [] }); redo(); };
+    host.querySelectorAll("[data-del]").forEach(b => b.onclick = () => { const i = +b.dataset.del; if (armed !== i) { armed = i; b.textContent = L("Wirklich?", "Sure?"); return; } st.sents.splice(i, 1); delete open[i]; redo(); });
     if (opt.cancel) $("#edCancel", host).onclick = opt.cancel;
     $("#edSave", host).onclick = () => {
-      keep();
       st.sents.forEach(s => { s.de = s.de.replace(/\s+/g, " ").trim(); });
       const real = st.sents.filter(s => s.de);
       if (!real.length) { toast(L("Es fehlt mindestens ein Satz.", "At least one sentence is needed.")); return; }
       const gi = st.sents.findIndex(s => s.de && s.g);
-      if (gi >= 0) { toast(L("Bitte zuerst die geratenen Sätze bestätigen.", "Please confirm the guessed sentences first.")); const c = host.querySelectorAll(".scard")[gi]; if (c) c.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+      if (gi >= 0) { toast(L("Sag zuerst bei den geratenen Sätzen, ob sie stimmen.", "First say whether the guessed sentences are right.")); const c = host.querySelectorAll(".scard")[gi]; if (c) c.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+      if (!st.t.trim()) st.t = autoTitle(real);
       opt.onSave(Object.assign({}, st, { sents: real }));
     };
   };
   draw();
 }
+
 function buildSents(st, oldSents) {
   return st.sents.map((s, i) => ({
     de: s.de, en: (s.en || "").trim(), kw: (s.kw || "").trim(),
     fp: [...new Set(s.pn.filter(n => st.pats.some(p => pNorm(p) === pNorm(n))).map(n => patFind(n)))].filter(Boolean),
-    box: s.box || (oldSents && oldSents[i] ? oldSents[i].box : 1) || 1
-  }));
+    box: s.box || (oldSents && oldSents[i] ? oldSents[i].box : 1) || 1,
+    pend: (s.pend || "").trim()
+  })).map(s => { if (!s.pend) delete s.pend; return s; });
 }
 function newAtomFrom(st, ctx) {
   atomsReady();
@@ -301,8 +303,33 @@ function newAtomFrom(st, ctx) {
   return a;
 }
 function savedNote(host, a) {
-  host.innerHTML = `<div class="fb good"><b>${L("Gespeichert.", "Saved.")}</b> ${L(`„${esc(a.t)}“ ist jetzt ein Atom mit ${a.sents.length} Sätzen. Erste Wiederholung: morgen.`, `“${esc(a.t)}” is now an atom with ${a.sents.length} sentences. First review: tomorrow.`)}</div><button class="btn petrol" id="toAtoms">${L("Zu meinen Atomen", "Go to my atoms")}</button>`;
+  host.innerHTML = `<div class="fb good"><b>${L("Gespeichert.", "Saved.")}</b> ${L(`„${esc(a.t)}“ ist jetzt ein Atom mit ${a.sents.length} Sätzen. Erste Wiederholung: morgen.`, `“${esc(a.t)}” is now an atom with ${a.sents.length} sentences. First review: tomorrow.`)}</div><div id="fixHost"></div><button class="btn petrol" id="toAtoms">${L("Zu meinen Atomen", "Go to my atoms")}</button>`;
+  fixBlock($("#fixHost", host), a, () => savedNote(host, a));
   $("#toAtoms").onclick = () => atomsHub();
+}
+function pendingOf(a) { return a.sents.map((s, i) => i).filter(i => a.sents[i].pend); }
+function fixPrompt(a) {
+  const P = ["Bei diesen Sätzen aus meinem Text „" + a.t + "“ musstest du raten, was ich meinte. Hier steht, was ich sagen wollte. Bitte schreib jeden Satz richtig auf Deutsch (B1, so einfach wie möglich).",
+    "Antworte am Ende mit genau diesem Block, ein Satz pro Zeile in derselben Reihenfolge:", "SÄTZE:", "1. (deutscher Satz) | (englische Bedeutung) | (2–4 Stichwörter in der Grundform)", ""];
+  pendingOf(a).forEach((i, n) => P.push(`${n + 1}. Geraten: ${plain(a.sents[i].de)} — Ich meinte: ${a.sents[i].pend}`));
+  return P.join("\n");
+}
+function fixBlock(host, a, after) {
+  const pend = pendingOf(a);
+  if (!host || !pend.length) { if (host) host.innerHTML = ""; return; }
+  host.innerHTML = `<div class="cb"><h3>${L(`${pend.length === 1 ? "1 Satz wartet" : pend.length + " Sätze warten"} auf Claude`, `${pend.length === 1 ? "1 sentence is" : pend.length + " sentences are"} waiting for Claude`)}</h3>
+    <div class="muted small">${L("Bis Claude sie geprüft hat, kommen sie nicht in deine Wiederholung. So lernst du nichts Falsches.", "Until Claude has checked them they stay out of your reviews, so you never learn anything wrong.")}</div>
+    <div class="step"><span class="n">1</span><div class="b"><button class="btn petrol" id="fxCopy" style="margin-top:0">${L("Anfrage kopieren", "Copy the request")}</button></div></div>
+    <div class="step"><span class="n">2</span><div class="b"><textarea class="ta2" id="fxPaste" style="margin-top:0" placeholder="${L("Claudes Antwort hier einfügen", "Paste Claude's reply here")}"></textarea><button class="btn primary" id="fxGo">${L("Übernehmen", "Use it")}</button></div></div></div>`;
+  const p = fixPrompt(a);
+  $("#fxCopy", host).onclick = () => { if (!shareText(p)) copyText(p, ok => toast(ok ? L("Kopiert. Jetzt bei Claude einfügen.", "Copied. Now paste it to Claude.") : L("Kopieren ging nicht", "Couldn't copy"))); };
+  $("#fxGo", host).onclick = () => {
+    const r = parseClaude($("#fxPaste", host).value);
+    if (!r || r.sents.length < pend.length) { toast(L("Ich finde die Sätze nicht. Bitte die ganze Antwort einfügen.", "I can't find the sentences. Please paste the whole reply.")); return; }
+    pend.forEach((i, n) => { const s = a.sents[i], x = r.sents[n]; s.de = x.de; s.en = x.en || s.en; s.kw = x.kw || s.kw; delete s.pend; s.box = 1; });
+    a.corr = a.sents.map(x => plain(x.de)).join(" "); save();
+    toast(L("Übernommen", "Done")); after();
+  };
 }
 
 /* ---------- the Claude block on task screens ---------- */
@@ -369,7 +396,7 @@ function atomsHub() {
   recStop(); atomsReady();
   const due = atomsDue(), act = DB.atoms.filter(a => !a.done).sort((a, b) => a.due < b.due ? -1 : 1), grad = DB.atoms.filter(a => a.done);
   const pats = patsSorted(), weak = pats.find(p => p.n && p.score < 1 && p.atoms);
-  const row = a => `<button class="li" data-at="${a.id}"><span class="tx"><span class="d">${esc(a.t)}</span><span class="e">${a.done ? L("abgeschlossen", "graduated") : L(`Box ${Math.min(a.box, 5)} · ${a.sents.length} Sätze · ${fmtDay(a.due)}`, `Box ${Math.min(a.box, 5)} · ${a.sents.length} sentences · ${fmtDay(a.due)}`)}</span></span>${a.done ? `<span class="badge ok">✓</span>` : a.due <= today() ? `<span class="badge due">${L("fällig", "due")}</span>` : `<span class="badge">${Math.min(a.box, 5)}</span>`}</button>`;
+  const row = a => `<button class="li" data-at="${a.id}"><span class="tx"><span class="d">${esc(a.t)}</span><span class="e">${pendingOf(a).length ? L("wartet auf Claude · ", "waiting for Claude · ") : ""}${a.done ? L("abgeschlossen", "graduated") : L(`Box ${Math.min(a.box, 5)} · ${a.sents.length} Sätze · ${fmtDay(a.due)}`, `Box ${Math.min(a.box, 5)} · ${a.sents.length} sentences · ${fmtDay(a.due)}`)}</span></span>${a.done ? `<span class="badge ok">✓</span>` : a.due <= today() ? `<span class="badge due">${L("fällig", "due")}</span>` : `<span class="badge">${Math.min(a.box, 5)}</span>`}</button>`;
   const body = `<div class="stats"><div><b>${due.length}</b><span>${L("fällig", "due")}</span></div><div><b>${act.length}</b><span>${L("aktiv", "active")}</span></div><div><b>${pats.length}</b><span>${L("Muster", "patterns")}</span></div></div>
     <button class="hero" id="rev" ${due.length ? "" : "disabled"}><span class="ic">${due.length}</span><span><span class="tt">${L("Wiederholen", "Review")}</span><span class="ss">${due.length ? L("Mit Hinweisen, wenn du sie brauchst.", "With hints when you need them.") : L("Heute ist nichts fällig.", "Nothing is due today.")}</span></span></button>
     ${weak ? `<button class="hero alt" id="weak"><span class="ic">!</span><span><span class="tt">${L("Schwächstes Muster üben", "Practise your weakest pattern")}</span><span class="ss">${esc(weak.name)} · ${Math.round(weak.score * 100)} %</span></span></button>` : ""}
@@ -384,8 +411,8 @@ function atomsHub() {
     <details class="fold"><summary>${L("So funktionieren Atome", "How atoms work")}</summary><div class="in small">
       <p style="margin-top:0">${L("Ein Atom ist ein eigener, korrigierter Text. Jeder Satz hat seine eigene Box. Wiederholt wird nach 1, 3, 7, 16 und 35 Tagen.", "An atom is one of your own corrected texts. Every sentence has its own box. Reviews come after 1, 3, 7, 16 and 35 days.")}</p>
       <p>${L("Du siehst die englische Bedeutung und sagst den Satz auf Deutsch. Hängst du fest, holst du dir Hinweise: Stichwörter, dann eine Wortbank, dann einen Lückensatz, am Ende die Lösung. Die Hinweise verraten nie die Grammatik, die du übst.", "You see the English meaning and say the sentence in German. If you're stuck, take hints: key words, then a word bank, then a gap sentence, and finally the answer. Hints never give away the grammar you're practising.")}</p>
-      <p>${L("Richtig nur mit Englisch: eine Box höher. Richtig mit Stichwörtern: Box bleibt. Wortbank, Lücken oder Lösung gebraucht, oder ein bekannter Fehler: eine Box tiefer. Ein neuer Fehler wird nur notiert. Die Box des Atoms ist die seines schwächsten Satzes.", "Right with only the English: up one box. Right with key words: the box stays. Needed the word bank, gaps or answer, or a known mistake came back: down one box. A new mistake is just noted. The atom's box is that of its weakest sentence.")}</p>
-      <p style="margin-bottom:0">${L("Box 1–2: Satz neu bauen. Box 3–4: umformen. Box 5: ohne Englisch, ganz frei. Danach ist das Atom abgeschlossen.", "Box 1–2: rebuild the sentence. Box 3–4: transform it. Box 5: without the English, completely free. Then the atom graduates.")}</p></div></details>`;
+      <p>${L("Richtig nur mit dem Englisch: eine Box höher. Richtig mit Stichwörtern: Box bleibt. Mehr Hilfe gebraucht oder nicht ganz richtig: eine Box tiefer. Die Box des Atoms ist die seines schwächsten Satzes.", "Right with only the English: up one box. Right with key words: the box stays. Needed more help, or not quite right: down one box. The atom's box is that of its weakest sentence.")}</p>
+      <p style="margin-bottom:0">${L("Nach Box 5 ist das Atom abgeschlossen.", "After box 5 the atom graduates.")}</p></div></details>`;
   shell(L("Atome", "Atoms"), body, { back: L("Aktiv", "Active"), backTo: "aktiv", redraw: atomsHub });
   $("#rev").onclick = () => { if (due.length) startAtomReview(due.map(a => a.id)); };
   const w = $("#weak"); if (w) w.onclick = () => startPatPractice(weak.id);
@@ -409,7 +436,8 @@ function atomDetail(id, editing) {
   const hist = a.hist.slice(-8).map(h => `${fmtDay(h.d)}: ${typeof h.ok === "boolean" ? (h.ok ? "✓" : "✗") : `${h.ok}/${h.n}`}`).join(" · ");
   const body = `<div class="sit"><span class="lab">${a.done ? L("Abgeschlossen", "Graduated") : L(`Box ${Math.min(a.box, 5)} · nächste Wiederholung ${fmtDay(a.due)}`, `Box ${Math.min(a.box, 5)} · next review ${fmtDay(a.due)}`)}</span>${a.task ? `<p class="muted small">${esc(a.task)}</p>` : ""}</div>
     <div class="sec-h">${L("Sätze", "Sentences")}</div>
-    <div class="hl"><div class="slist">${a.sents.map(s => `<div class="s"><div class="de"><span>${markedHtml(s.de)}</span><span class="sbox">Box ${Math.min(s.box, 5)}</span></div>${s.en ? `<div class="en">${esc(s.en)}</div>` : ""}${s.fp.length ? `<div class="pchips">${s.fp.filter(x => DB.pats[x]).map(x => `<span class="pchip st">${esc(patName(x))}</span>`).join("")}</div>` : ""}</div>`).join("")}</div></div>
+    <div class="hl"><div class="slist">${a.sents.map(s => `<div class="s"><div class="de"><span>${markedHtml(s.de)}</span><span class="sbox">Box ${Math.min(s.box, 5)}</span></div>${s.en ? `<div class="en">${esc(s.en)}</div>` : ""}${s.pend ? `<div class="en" style="color:var(--amber)">${L("wartet auf Claude", "waiting for Claude")}</div>` : ""}</div>`).join("")}</div></div>
+    <div id="fixHost"></div>
     ${TTS ? `<button class="btn ghost" data-say="${esc(a.corr)}">${L("Ganzen Text anhören", "Play the whole text")}</button>` : ""}
     ${a.up ? `<div class="up"><div class="lab"><span>${L("Eine Stufe höher (B1)", "One step up (B1)")}</span>${TTS ? `<button class="spk" data-say="${esc(a.up)}">${ICON.spk}</button>` : ""}</div>${esc(a.up)}</div>` : ""}
     ${a.tr.length ? `<div class="sec-h">${L("Umformen", "Transformations")}</div><ul class="fp">${a.tr.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
@@ -419,6 +447,7 @@ function atomDetail(id, editing) {
     <div class="row2"><button class="btn ghost" id="edit">${L("Bearbeiten", "Edit")}</button><button class="btn ghost" id="del">${L("Löschen", "Delete")}</button></div>`;
   shell(a.t, body, { back: L("Atome", "Atoms"), backTo: "aktiv", redraw: () => atomDetail(id) });
   $("#back").onclick = () => atomsHub();
+  fixBlock($("#fixHost"), a, () => atomDetail(id));
   $("#now").onclick = () => startAtomReview([id]);
   $("#edit").onclick = () => atomDetail(id, true);
   let armed = false;
@@ -464,22 +493,24 @@ function patDetail(id) {
 /* A session is a list of steps. A step is one atom in "text" mode, or one sentence of an atom in "satz" mode.
    R = { steps:[{aid, sis:[...]}], i, kind:"due"|"pat", pat, res:{ "aid|si": {g, rung, pk:[ids], att} }, attempts:{} } */
 let R = null;
-function atomPhase(a) { return a.box <= 2 ? "rebuild" : a.box <= 4 ? "transform" : "free"; }
-function startRung(a, s) { return atomPhase(a) === "free" || !s.en ? 1 : 2; }
+function atomPhase(a) { return "rebuild"; }
+function startRung(a, s) { return s.en ? 2 : 1; }
 function startAtomReview(ids) {
   atomsReady();
   const steps = [];
   ids.map(atomById).filter(Boolean).forEach(a => {
-    if (DB.atomMode === "text") steps.push({ aid: a.id, sis: a.sents.map((_, i) => i) });
-    else a.sents.forEach((_, i) => steps.push({ aid: a.id, sis: [i] }));
+    const ok = a.sents.map((_, i) => i).filter(i => !a.sents[i].pend);
+    if (!ok.length) return;
+    if (DB.atomMode === "text") steps.push({ aid: a.id, sis: ok });
+    else ok.forEach(i => steps.push({ aid: a.id, sis: [i] }));
   });
-  if (!steps.length) { atomsHub(); return; }
+  if (!steps.length) { toast(L("Diese Sätze warten noch auf Claude.", "These sentences are still waiting for Claude.")); atomsHub(); return; }
   R = { steps, i: 0, kind: "due", res: {}, rung: {}, att: {}, shown: {}, tr: {} };
   reviewStep();
 }
 function startPatPractice(pid) {
   atomsReady();
-  const list = shuffle(patSentences(pid)).slice(0, 10);
+  const list = shuffle(patSentences(pid).filter(x => !x.a.sents[x.si].pend)).slice(0, 10);
   if (!list.length) { toast(L("Keine Sätze für dieses Muster.", "No sentences for this pattern.")); return; }
   R = { steps: list.map(x => ({ aid: x.a.id, sis: [x.si] })), i: 0, kind: "pat", pat: pid, res: {}, rung: {}, att: {}, shown: {}, tr: {} };
   reviewStep();
@@ -552,8 +583,6 @@ function drawCompare(st, a, k, phase) {
   $("#next").onclick = () => {
     const miss = st.sis.find(si => !R.res[rk(a.id, si)] || !R.res[rk(a.id, si)].g);
     if (miss != null) { toast(single ? L("Bewerte zuerst den Satz.", "Grade the sentence first.") : L("Bewerte zuerst alle Sätze.", "Grade all sentences first.")); return; }
-    const pend = st.sis.find(si => { const r = R.res[rk(a.id, si)]; return r.g !== "ok" && !r.pk.length; });
-    if (pend != null) { toast(L("Wähle das Fehlermuster aus (oder schreib ein neues).", "Pick the mistake pattern (or type a new one).")); return; }
     st.sis.forEach(si => { const r = R.res[rk(a.id, si)]; r.rung = R.rung[k]; r.att = att; });
     R.i++;
     const nextSt = R.steps[R.i];
@@ -565,48 +594,26 @@ function gradeRowHtml(a, si) {
   const s = a.sents[si], r = R.res[rk(a.id, si)] || {};
   return `<div class="gr" id="gr-${si}"><div class="tgt"><span>${markedHtml(s.de)}</span>${TTS ? `<button class="spk" data-say="${esc(plain(s.de))}" aria-label="${L("Anhören", "Play")}">${ICON.spk}</button>` : ""}</div>
     ${s.en ? `<div class="en2">${esc(s.en)}</div>` : ""}
-    ${s.fp.filter(x => DB.pats[x]).length ? `<div class="pchips">${s.fp.filter(x => DB.pats[x]).map(x => `<span class="pchip st">${esc(patName(x))}</span>`).join("")}</div>` : ""}
-    <div class="g3"><button class="ok ${r.g === "ok" ? "on" : ""}" data-g="ok">✓ ${L("Richtig", "Right")}</button><button class="kn ${r.g === "kn" ? "on" : ""}" data-g="kn">✗ ${L("Bekannter Fehler", "Known mistake")}</button><button class="nw ${r.g === "nw" ? "on" : ""}" data-g="nw">＋ ${L("Neuer Fehler", "New mistake")}</button></div>
-    <div class="pk"></div></div>`;
+    <div class="g2"><button class="${r.g === "ok" ? "ok" : r.g ? "dim" : ""}" data-g="ok">✓ ${L("Richtig", "Right")}</button><button class="${r.g === "no" ? "no" : r.g ? "dim" : ""}" data-g="no">✗ ${L("Nicht ganz", "Not quite")}</button></div></div>`;
 }
+
 function bindGradeRow(a, si, k) {
-  const box = $("#gr-" + si), key = rk(a.id, si), s = a.sents[si];
-  const drawPick = () => {
-    const r = R.res[key], host = box.querySelector(".pk");
-    box.querySelectorAll("[data-g]").forEach(b => b.classList.toggle("on", b.dataset.g === r.g));
-    if (!r || r.g === "ok") { host.innerHTML = ""; return; }
-    const own = s.fp.filter(x => DB.pats[x]);
-    const opts = r.g === "kn" ? (own.length ? own : atomPats(a)) : patsSorted().map(p => p.id).filter(x => !own.includes(x)).slice(0, 14);
-    host.innerHTML = `<div class="pick"><div class="muted small" style="font-weight:700">${r.g === "kn" ? L("Welches Muster kam wieder?", "Which pattern came back?") : L("Welcher Fehler? Wähle ein Muster oder schreib ein neues.", "Which mistake? Pick a pattern or type a new one.")}</div>
-      <div class="pchips">${opts.map(x => `<button class="pchip" data-pk="${x}" aria-pressed="${r.pk.includes(x)}">${esc(patName(x))}</button>`).join("")}</div>
-      ${r.g === "nw" || !opts.length ? `<div class="row2" style="margin-top:8px"><input class="tin" style="margin-top:0" id="np-${si}" placeholder="${L("Neues Muster, z. B. Dativ nach mit", "New pattern, e.g. dative after mit")}"><button class="btn ghost" id="npb-${si}" style="flex:0 0 auto;width:auto;padding:0 16px">+</button></div>` : ""}</div>`;
-    host.querySelectorAll("[data-pk]").forEach(b => b.onclick = () => { const x = b.dataset.pk; r.pk = r.pk.includes(x) ? r.pk.filter(y => y !== x) : r.pk.concat(x); b.setAttribute("aria-pressed", r.pk.includes(x)); });
-    const nb = $("#npb-" + si), ni = $("#np-" + si);
-    if (nb) { const addNew = () => { const v = ni.value.trim(); if (!v) return; const id = patFind(v); save(); if (!r.pk.includes(id)) r.pk.push(id); drawPick(); }; nb.onclick = addNew; ni.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addNew(); } }); }
-  };
+  const box = $("#gr-" + si), key = rk(a.id, si);
   box.querySelectorAll("[data-g]").forEach(b => b.onclick = () => {
-    const prev = R.res[key];
-    R.res[key] = { g: b.dataset.g, pk: prev && prev.g === b.dataset.g ? prev.pk : [] };
-    if (b.dataset.g === "kn") { const own = s.fp.filter(x => DB.pats[x]); if (own.length === 1) R.res[key].pk = own.slice(); }
-    drawPick();
+    R.res[key] = { g: b.dataset.g, pk: [] };
+    box.querySelectorAll("[data-g]").forEach(x => { x.className = x.dataset.g === b.dataset.g ? (b.dataset.g === "ok" ? "ok" : "no") : "dim"; });
   });
-  if (R.res[key]) drawPick();
 }
-/* the scoring: free rung 2 (rung 1 in box 5), key words keep the box, more help or a known mistake drops it */
+
+/* scoring: right with only the English = up, with key words = stays, more help or not quite = down */
 function scoreSentence(a, si, r) {
-  const s = a.sents[si], free = R.kind === "pat" ? 2 : atomPhase(a) === "free" ? 1 : 2;
-  let delta = 0, ev;
-  if (r.g === "kn") { delta = -1; }
-  else if (r.g === "nw") { delta = 0; }
-  else { delta = r.rung <= free ? 1 : r.rung === 3 ? 0 : -1; }
-  ev = r.g === "ok" ? (r.rung <= free ? "ok" : "hint") : null;
-  // pattern events: the named ones failed, the rest of the sentence's patterns get the hint result
-  const failed = r.g === "ok" ? [] : r.pk;
-  s.fp.filter(x => DB.pats[x]).forEach(x => { if (failed.includes(x)) return; patEvent(x, r.g === "ok" ? ev : r.rung <= free ? "ok" : "hint"); });
-  failed.forEach(x => patEvent(x, "fail"));
-  if (r.g === "nw") s.fp = [...new Set(s.fp.concat(r.pk))];
-  return delta;
+  const s = a.sents[si], pats = s.fp.filter(x => DB.pats[x]);
+  if (r.g !== "ok") { pats.forEach(x => patEvent(x, "fail")); return -1; }
+  const free = r.rung <= 2;
+  pats.forEach(x => patEvent(x, free ? "ok" : "hint"));
+  return free ? 1 : r.rung === 3 ? 0 : -1;
 }
+
 function finishAtom(a) {
   const old = a.box; let ok = 0;
   a.sents.forEach((s, si) => {
@@ -616,7 +623,7 @@ function finishAtom(a) {
     if (d > 0) ok++;
   });
   if (atomPhase(a) === "transform") a.ti = (a.ti || 0) + 1;
-  const min = Math.min(...a.sents.map(s => s.box));
+  const min = Math.min(...a.sents.filter(s => !s.pend).map(s => s.box).concat(a.sents.every(s => s.pend) ? [1] : []));
   if (min >= 6) { a.done = true; a.box = 5; }
   else { a.box = min; a.due = addDays(today(), ATOM_INT[Math.min(5, min)]); }
   a.hist.push({ d: today(), b: old, ok, n: a.sents.length });
@@ -639,7 +646,7 @@ function reviewDone() {
   const s = R; R = null;
   const res = Object.values(s.res), n = res.length;
   const free = res.filter(r => r.g === "ok" && r.rung <= 2).length, help = res.filter(r => r.g === "ok" && r.rung > 2).length, bad = n - free - help;
-  const touched = [...new Set(res.flatMap(r => r.pk || []))].filter(x => DB.pats[x]);
+  const touched = [...new Set(Object.keys(s.res).filter(key => s.res[key].g !== "ok").flatMap(key => { const [aid, si] = key.split("|"); const a = atomById(aid); return a && a.sents[+si] ? a.sents[+si].fp : []; }))].filter(x => DB.pats[x]);
   if (s.kind === "pat") {
     // free practice: only the patterns change
     s.steps.forEach(st => { const a = atomById(st.aid); if (!a) return; st.sis.forEach(si => { const r = s.res[rk(a.id, si)]; if (r) { R = s; scoreSentence(a, si, r); R = null; } }); });
