@@ -120,15 +120,17 @@ function atomsReady() {
   });
   if (changed) save();
 }
-function patFind(name, noCreate) {
+function patFind(name, noCreate, en) {
   const n = pNorm(name); if (!n) return null;
-  for (const id in DB.pats) if (pNorm(DB.pats[id].name) === n) return id;
+  for (const id in DB.pats) if (pNorm(DB.pats[id].name) === n) { if (en && !DB.pats[id].en) DB.pats[id].en = en; return id; }
   if (noCreate) return null;
   const id = "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   DB.pats[id] = { name: String(name).trim(), made: today(), ev: [] };
+  if (en) DB.pats[id].en = en;
   return id;
 }
 function patName(id) { return DB.pats[id] ? DB.pats[id].name : ""; }
+function patLabel(id) { const p = DB.pats[id]; return p ? (EN() && p.en ? p.en : p.name) : ""; }
 function patEvent(id, r) { const p = DB.pats[id]; if (!p) return; p.ev.push({ d: today(), r }); if (p.ev.length > 200) p.ev = p.ev.slice(-200); }
 function patStats(id) {
   const p = DB.pats[id], ev = p ? p.ev.slice(-12) : [];
@@ -137,7 +139,7 @@ function patStats(id) {
   return { o, h, f, n, score: n ? (o + h * 0.5) / n : -1, atoms: atoms.length, act: atoms.filter(a => !a.done).length };
 }
 function patsSorted() {
-  return Object.keys(DB.pats).map(id => Object.assign({ id, name: DB.pats[id].name }, patStats(id))).filter(p => p.atoms || p.n)
+  return Object.keys(DB.pats).map(id => Object.assign({ id, name: DB.pats[id].name, label: patLabel(id) }, patStats(id))).filter(p => p.atoms || p.n)
     .sort((a, b) => (a.n ? 0 : 1) - (b.n ? 0 : 1) || a.score - b.score || b.atoms - a.atoms);
 }
 function patBar(p) { return p.n ? `<div class="pbar"><i class="o" style="width:${p.o / p.n * 100}%"></i><i class="h" style="width:${p.h / p.n * 100}%"></i><i class="f" style="width:${p.f / p.n * 100}%"></i></div>` : `<div class="pbar"></div>`; }
@@ -163,7 +165,7 @@ function claudePrompt(ctx) {
   P.push("1. (korrigierter Satz mit den korrigierten Stellen in [eckigen Klammern]) | (englische Bedeutung) | (2–4 Stichwörter in der Grundform, ohne die korrigierten Stellen)");
   P.push("(ein Satz pro Zeile, nummeriert; geratene Sätze mit (?) am Ende des deutschen Satzes)");
   P.push("FEHLERMUSTER:");
-  P.push("- (ein Muster pro Zeile, kurz, mit den Satznummern, z. B. „Verb an Position 2 (Sätze 1, 3)“)");
+  P.push("- (ein Muster pro Zeile: deutscher Name | englischer Name (Satznummern), z. B. „Verb an Position 2 | Verb in second position (Sätze 1, 3)“)");
   P.push("UMFORMEN:");
   P.push("- (3 kurze Aufgaben zum Umformen für spätere Wiederholungen, z. B. „im Perfekt“ oder „aus Sicht von Anna“)");
   P.push("B1-VERSION:");
@@ -184,12 +186,12 @@ function parseNums(t) {
 }
 function parseClaude(raw) {
   const s = String(raw || "").replace(/\r/g, "").replace(/\*\*|__/g, "").split("\n").filter(l => !/^\s*```/.test(l)).join("\n");
-  const re = /^[ \t>#]*(KORREKTUR|SÄTZE|SAETZE|ENGLISCH|FEHLERMUSTER|UMFORMEN|B1[- ]VERSION|TITEL)\b[ \t]*:?[ \t]*/gim;
+  const re = /^[ \t>#]*(KORREKTUR|SÄTZE|SAETZE|ENGLISCH|FEHLERMUSTER|MUSTER|UMFORMEN|B1[- ]VERSION|TITEL)\b[ \t]*:?[ \t]*/gim;
   const marks = []; let m;
   while ((m = re.exec(s))) marks.push({ k: m[1].toUpperCase().replace("SAETZE", "SÄTZE").replace("B1 VERSION", "B1-VERSION"), start: m.index, body: m.index + m[0].length });
   // the last KORREKTUR wins (a quoted prompt may contain one too); without one, the first SÄTZE
   let k0 = -1; marks.forEach((mk, i) => { if (mk.k === "KORREKTUR") k0 = i; });
-  if (k0 < 0) k0 = marks.findIndex(mk => mk.k === "SÄTZE");
+  if (k0 < 0) marks.forEach((mk, i) => { if (mk.k === "SÄTZE") k0 = i; });
   if (k0 < 0) return null;
   const use = marks.slice(k0), out = {};
   use.forEach((mk, i) => { const end = i + 1 < use.length ? use[i + 1].start : s.length; if (!(mk.k in out)) out[mk.k] = s.slice(mk.body, end).trim(); });
@@ -214,19 +216,23 @@ function parseClaude(raw) {
   const fp = list(out.FEHLERMUSTER).map(x => {
     const mm = x.match(/\s*\(([^()]*\d[^()]*)\)\s*$/);
     const nums = mm ? parseNums(mm[1]).filter(n => n >= 1 && n <= sents.length) : [];
-    let name = (mm ? x.slice(0, mm.index) : x).trim();
+    let name = (mm ? x.slice(0, mm.index) : x).trim(), en = "";
     if (/^[„“"].*[“”"]$/.test(name)) name = name.slice(1, -1).trim();
-    return { name, nums };
+    const bar = name.split(/\s+\|\s+|\s*\|\s*/);
+    if (bar.length > 1) { name = bar[0].trim(); en = bar.slice(1).join(" ").trim(); }
+    return { name, en, nums };
   }).filter(x => x.name);
   const up = out["B1-VERSION"] && !isPh(out["B1-VERSION"]) ? lines(out["B1-VERSION"]).join("\n") : "";
   const title = out.TITEL && !isPh(out.TITEL) ? lines(out.TITEL)[0].replace(/^[„“"]|[“”"]$/g, "").trim() : "";
-  return { sents, fp, tr: list(out.UMFORMEN), up, title, corr: korr ? plain(takeGuess(korr).t) : sents.map(x => plain(x.de)).join(" ") };
+  return { sents, fp, tr: list(out.UMFORMEN), up, title, muster: list(out.MUSTER), corr: korr ? plain(takeGuess(korr).t) : sents.map(x => plain(x.de)).join(" ") };
 }
 
 /* ---------- the atom editor (after a correction, and for "Bearbeiten") ---------- */
 /* st = { t, sents:[{de,en,kw,g,pn:[names]}], pats:[names], tr:[], up } */
+const PAT_EN = {};
 function stateFromParse(p, title) {
   const names = p.fp.map(x => x.name);
+  p.fp.forEach(x => { if (x.en) PAT_EN[pNorm(x.name)] = x.en; });
   return {
     t: title || p.title || autoTitle(p.sents), tr: p.tr.slice(), up: p.up || "", pats: names.slice(),
     sents: p.sents.map((s, i) => ({ de: s.de, en: s.en, kw: s.kw, g: !!s.g, pn: p.fp.filter(f => !f.nums.length || f.nums.includes(i + 1)).map(f => f.name) }))
@@ -288,7 +294,7 @@ function atomEditor(host, st, opt) {
 function buildSents(st, oldSents) {
   return st.sents.map((s, i) => ({
     de: s.de, en: (s.en || "").trim(), kw: (s.kw || "").trim(),
-    fp: [...new Set(s.pn.filter(n => st.pats.some(p => pNorm(p) === pNorm(n))).map(n => patFind(n)))].filter(Boolean),
+    fp: [...new Set(s.pn.filter(n => st.pats.some(p => pNorm(p) === pNorm(n))).map(n => patFind(n, false, PAT_EN[pNorm(n)])))].filter(Boolean),
     box: s.box || (oldSents && oldSents[i] ? oldSents[i].box : 1) || 1,
     pend: (s.pend || "").trim()
   })).map(s => { if (!s.pend) delete s.pend; return s; });
@@ -296,7 +302,7 @@ function buildSents(st, oldSents) {
 function newAtomFrom(st, ctx) {
   atomsReady();
   const sents = buildSents(st);
-  st.pats.forEach(n => patFind(n));
+  st.pats.forEach(n => patFind(n, false, PAT_EN[pNorm(n)]));
   const a = { id: "a" + Date.now().toString(36), t: st.t.trim() || ctx.title || L("Mein Text", "My text"), k: ctx.kindKey || "frei", task: ctx.task || "", cue: ctx.cue || "", orig: ctx.text || "",
     corr: sents.map(s => plain(s.de)).join(" "), sents, tr: st.tr, up: st.up, box: 1, due: addDays(today(), 1), made: today(), hist: [], ti: 0, done: false, v: 2 };
   DB.atoms.push(a); save();
@@ -399,9 +405,10 @@ function atomsHub() {
   const row = a => `<button class="li" data-at="${a.id}"><span class="tx"><span class="d">${esc(a.t)}</span><span class="e">${pendingOf(a).length ? L("wartet auf Claude · ", "waiting for Claude · ") : ""}${a.done ? L("abgeschlossen", "graduated") : L(`Box ${Math.min(a.box, 5)} · ${a.sents.length} Sätze · ${fmtDay(a.due)}`, `Box ${Math.min(a.box, 5)} · ${a.sents.length} sentences · ${fmtDay(a.due)}`)}</span></span>${a.done ? `<span class="badge ok">✓</span>` : a.due <= today() ? `<span class="badge due">${L("fällig", "due")}</span>` : `<span class="badge">${Math.min(a.box, 5)}</span>`}</button>`;
   const body = `<div class="stats"><div><b>${due.length}</b><span>${L("fällig", "due")}</span></div><div><b>${act.length}</b><span>${L("aktiv", "active")}</span></div><div><b>${pats.length}</b><span>${L("Muster", "patterns")}</span></div></div>
     <button class="hero" id="rev" ${due.length ? "" : "disabled"}><span class="ic">${due.length}</span><span><span class="tt">${L("Wiederholen", "Review")}</span><span class="ss">${due.length ? L("Mit Hinweisen, wenn du sie brauchst.", "With hints when you need them.") : L("Heute ist nichts fällig.", "Nothing is due today.")}</span></span></button>
-    ${weak ? `<button class="hero alt" id="weak"><span class="ic">!</span><span><span class="tt">${L("Schwächstes Muster üben", "Practise your weakest pattern")}</span><span class="ss">${esc(weak.name)} · ${Math.round(weak.score * 100)} %</span></span></button>` : ""}
+    ${weak ? `<button class="hero alt" id="weak"><span class="ic">!</span><span><span class="tt">${L("Schwächstes Muster üben", "Practise your weakest pattern")}</span><span class="ss">${esc(weak.label)} · ${Math.round(weak.score * 100)} %</span></span></button>` : ""}
     <div class="seg" id="mode"><button data-m="satz" aria-pressed="${DB.atomMode === "satz"}">${L("Satz für Satz", "Sentence by sentence")}</button><button data-m="text" aria-pressed="${DB.atomMode === "text"}">${L("Ganzer Text", "Whole text")}</button></div>
     <div class="menu" style="margin-top:12px">
+      ${missingEn().n ? `<button class="item" id="mEn"><span class="ic">EN</span><span class="tx"><span class="tt">${L("Englisch ergänzen", "Add the English")}</span><span class="ss">${L(`${missingEn().n} Sätze oder Muster ohne Englisch`, `${missingEn().n} sentences or patterns have no English`)}</span></span></button>` : ""}
       <button class="item" id="mPats"><span class="ic">${pats.length || "0"}</span><span class="tx"><span class="tt">${L("Meine Fehlermuster", "My mistake patterns")}</span><span class="ss">${pats.length ? L("Was klappt, was nur mit Hilfe, was noch nicht", "What works, what needs hints, what doesn't yet") : L("Kommen mit deinem ersten Atom", "They arrive with your first atom")}</span></span></button>
       <button class="item" id="new"><span class="ic">+</span><span class="tx"><span class="tt">${L("Neues Atom", "New atom")}</span><span class="ss">${L("Schreiben oder sprechen, korrigieren lassen, speichern.", "Write or speak, get corrected, save.")}</span></span></button>
       <button class="item" id="paste"><span class="ic">⇩</span><span class="tx"><span class="tt">${L("Claude-Antwort einfügen", "Paste a Claude reply")}</span><span class="ss">${L("Für Texte, die du direkt im Chat geschrieben hast", "For texts you wrote straight into a chat")}</span></span></button>
@@ -418,6 +425,7 @@ function atomsHub() {
   const w = $("#weak"); if (w) w.onclick = () => startPatPractice(weak.id);
   document.querySelectorAll("#mode button").forEach(b => b.onclick = () => { DB.atomMode = b.dataset.m; save(); document.querySelectorAll("#mode button").forEach(x => x.setAttribute("aria-pressed", x === b)); });
   $("#mPats").onclick = () => patsHub();
+  const mEn = $("#mEn"); if (mEn) mEn.onclick = () => enFill();
   $("#new").onclick = () => freeWrite();
   $("#paste").onclick = () => pasteImport();
   document.querySelectorAll("[data-at]").forEach(b => b.onclick = () => atomDetail(b.dataset.at));
@@ -434,14 +442,12 @@ function atomDetail(id, editing) {
     return;
   }
   const hist = a.hist.slice(-8).map(h => `${fmtDay(h.d)}: ${typeof h.ok === "boolean" ? (h.ok ? "✓" : "✗") : `${h.ok}/${h.n}`}`).join(" · ");
-  const body = `<div class="sit"><span class="lab">${a.done ? L("Abgeschlossen", "Graduated") : L(`Box ${Math.min(a.box, 5)} · nächste Wiederholung ${fmtDay(a.due)}`, `Box ${Math.min(a.box, 5)} · next review ${fmtDay(a.due)}`)}</span>${a.task ? `<p class="muted small">${esc(a.task)}</p>` : ""}</div>
+  const body = `<div class="sit"><span class="lab">${a.done ? L("Abgeschlossen", "Graduated") : L(`Box ${Math.min(a.box, 5)} · nächste Wiederholung ${fmtDay(a.due)}`, `Box ${Math.min(a.box, 5)} · next review ${fmtDay(a.due)}`)}</span></div>
     <div class="sec-h">${L("Sätze", "Sentences")}</div>
     <div class="hl"><div class="slist">${a.sents.map(s => `<div class="s"><div class="de"><span>${markedHtml(s.de)}</span><span class="sbox">Box ${Math.min(s.box, 5)}</span></div>${s.en ? `<div class="en">${esc(s.en)}</div>` : ""}${s.pend ? `<div class="en" style="color:var(--amber)">${L("wartet auf Claude", "waiting for Claude")}</div>` : ""}</div>`).join("")}</div></div>
     <div id="fixHost"></div>
     ${TTS ? `<button class="btn ghost" data-say="${esc(a.corr)}">${L("Ganzen Text anhören", "Play the whole text")}</button>` : ""}
     ${a.up ? `<div class="up"><div class="lab"><span>${L("Eine Stufe höher (B1)", "One step up (B1)")}</span>${TTS ? `<button class="spk" data-say="${esc(a.up)}">${ICON.spk}</button>` : ""}</div>${esc(a.up)}</div>` : ""}
-    ${a.tr.length ? `<div class="sec-h">${L("Umformen", "Transformations")}</div><ul class="fp">${a.tr.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-    ${a.orig ? `<details class="fold"><summary>${L("Mein Original", "My original")}</summary><div class="in" style="white-space:pre-wrap">${esc(a.orig)}</div></details>` : ""}
     ${hist ? `<p class="muted small">${hist}</p>` : ""}
     <button class="btn primary" id="now">${L("Jetzt wiederholen", "Review now")}</button>
     <div class="row2"><button class="btn ghost" id="edit">${L("Bearbeiten", "Edit")}</button><button class="btn ghost" id="del">${L("Löschen", "Delete")}</button></div>`;
@@ -459,7 +465,7 @@ function patsHub() {
   recStop(); atomsReady();
   const pats = patsSorted();
   const body = `<p class="muted" style="margin-top:4px">${L("Alle Fehlermuster aus allen Atomen. Grün = ohne Hilfe richtig, gelb = nur mit Hinweisen, rot = Fehler kam wieder. Die schwächsten stehen oben.", "All mistake patterns across all atoms. Green = right without help, amber = only with hints, red = the mistake came back. The weakest are at the top.")}</p>
-    ${pats.length ? `<div class="hl" style="padding:0">${pats.map(p => `<button class="prow" data-p="${p.id}"><div class="top"><b>${esc(p.name)}</b><span>${L(`${p.atoms} ${p.atoms === 1 ? "Atom" : "Atome"}`, `${p.atoms} ${p.atoms === 1 ? "atom" : "atoms"}`)}</span></div>${patBar(p)}<div class="sub">${patLine(p)}</div></button>`).join("")}</div>`
+    ${pats.length ? `<div class="hl" style="padding:0">${pats.map(p => `<button class="prow" data-p="${p.id}"><div class="top"><b>${esc(p.label)}</b><span>${L(`${p.atoms} ${p.atoms === 1 ? "Atom" : "Atome"}`, `${p.atoms} ${p.atoms === 1 ? "atom" : "atoms"}`)}</span></div>${patBar(p)}<div class="sub">${patLine(p)}</div></button>`).join("")}</div>`
       : `<p class="empty">${L("Noch keine Muster. Sie kommen mit deinem ersten korrigierten Text.", "No patterns yet. They arrive with your first corrected text.")}</p>`}`;
   shell(L("Fehlermuster", "Mistake patterns"), body, { back: L("Atome", "Atoms"), backTo: "aktiv", redraw: patsHub });
   $("#back").onclick = () => atomsHub();
@@ -478,9 +484,9 @@ function patDetail(id) {
     <div class="hl"><div class="slist">${list.map(x => `<div class="s"><div class="de"><span>${markedHtml(x.a.sents[x.si].de)}</span></div><div class="en">${esc(x.a.t)}</div></div>`).join("") || `<span class="muted small">${L("Keine.", "None.")}</span>`}</div></div>
     <details class="fold"><summary>${L("Umbenennen oder zusammenführen", "Rename or merge")}</summary><div class="in">
       <label class="lab2" for="pnN">${L("Name", "Name")}</label><input class="tin" id="pnN" value="${esc(p.name)}"><button class="btn petrol" id="pnS">${L("Umbenennen", "Rename")}</button>
-      ${others.length ? `<label class="lab2" for="pnM">${L("Gleiches Muster wie …", "Same pattern as …")}</label><select class="tin" id="pnM">${others.map(o => `<option value="${o}">${esc(patName(o))}</option>`).join("")}</select><button class="btn ghost" id="pnG">${L("Zusammenführen", "Merge")}</button>` : ""}
+      ${others.length ? `<label class="lab2" for="pnM">${L("Gleiches Muster wie …", "Same pattern as …")}</label><select class="tin" id="pnM">${others.map(o => `<option value="${o}">${esc(patLabel(o))}</option>`).join("")}</select><button class="btn ghost" id="pnG">${L("Zusammenführen", "Merge")}</button>` : ""}
       <button class="btn ghost" id="pnD" style="margin-top:8px">${L("Muster löschen", "Delete pattern")}</button></div></details>`;
-  shell(p.name, body, { back: L("Muster", "Patterns"), backTo: "aktiv", redraw: () => patDetail(id) });
+  shell(patLabel(id), body, { back: L("Muster", "Patterns"), backTo: "aktiv", redraw: () => patDetail(id) });
   $("#back").onclick = () => patsHub();
   $("#go").onclick = () => startPatPractice(id);
   $("#pnS").onclick = () => { const v = $("#pnN").value.trim(); if (!v) return; const ex = patFind(v, true); if (ex && ex !== id) { toast(L("Diesen Namen gibt es schon. Nutze „Zusammenführen“.", "That name exists already. Use “Merge”.")); return; } p.name = v; save(); toast(L("Umbenannt", "Renamed")); patDetail(id); };
@@ -553,8 +559,8 @@ function reviewStep() {
   const spoken = a.k === "sp";
   const prev = single && R.kind === "due" && si0 > 0 ? `<div class="prev">${a.sents.slice(0, si0).map(s => `<b>${esc(plain(s.de))}</b>`).join(" ")}</div>` : "";
   const nextR = rung + 1;
-  const body = `<div class="cnt muted small" style="text-align:center;font-weight:700">${R.i + 1} ${L("von", "of")} ${R.steps.length}${R.kind === "pat" ? " · " + esc(patName(R.pat)) : ` · Box ${Math.min(...st.sis.map(si => a.sents[si].box), 5)}`}</div>
-    <div class="sit"><span class="lab">${esc(a.t)}${single ? ` · ${L("Satz", "Sentence")} ${si0 + 1}/${a.sents.length}` : ""}</span><p>${esc(ins)}</p>${a.task && rung >= 1 ? `<p class="muted small">${esc(a.task)}</p>` : ""}${prev}</div>
+  const body = `<div class="cnt muted small" style="text-align:center;font-weight:700">${R.i + 1} ${L("von", "of")} ${R.steps.length}${R.kind === "pat" ? " · " + esc(patLabel(R.pat)) : ` · Box ${Math.min(...st.sis.map(si => a.sents[si].box), 5)}`}</div>
+    <div class="sit"><span class="lab">${esc(a.t)}${single ? ` · ${L("Satz", "Sentence")} ${si0 + 1}/${a.sents.length}` : ""}</span><p>${esc(ins)}</p>${prev}</div>
     <div class="ladder">${[1, 2, 3, 4, 5, 6].map(n => `<i class="${n <= rung ? (n >= 4 ? "on top" : "on") : ""}"></i>`).join("")}</div>
     <div class="lad-l"><span>${L("Hinweis", "Hint")}: ${esc(T(RUNGS[Math.max(1, rung)]))}</span><span>${rung <= (phase === "free" ? 1 : 2) ? L("ohne Hilfe", "no help") : rung === 3 ? L("Box bleibt", "box stays") : L("Box sinkt", "box drops")}</span></div>
     ${hintBlock(a, st.sis, Math.min(rung, 5), single)}
@@ -656,7 +662,7 @@ function reviewDone() {
   s.steps.forEach(st => { const a = atomById(st.aid); if (!a) return; const k = st.aid + "#" + st.sis.join(","); if ((s.att[k] || "").trim()) attempts.push({ a, att: s.att[k].trim(), tr: atomPhase(a) === "transform" && s.kind === "due" ? (s.tr[a.id] || "") : "", sis: st.sis }); });
   const body = `<div class="result"><div class="pct">${free}/${n}</div><div class="lbl">${L("Sätze ohne Hilfe richtig", "sentences right without help")}</div></div>
     <div class="stats"><div><b>${free}</b><span>${L("ohne Hilfe", "no help")}</span></div><div><b>${help}</b><span>${L("mit Hinweisen", "with hints")}</span></div><div><b>${bad}</b><span>${L("Fehler", "mistakes")}</span></div></div>
-    ${touched.length ? `<div class="hint"><b>${L("Diese Muster kamen heute vor:", "These patterns came up today:")}</b><ul class="fp">${touched.map(x => `<li>${esc(patName(x))}</li>`).join("")}</ul></div>` : ""}
+    ${touched.length ? `<div class="hint"><b>${L("Diese Muster kamen heute vor:", "These patterns came up today:")}</b><ul class="fp">${touched.map(x => `<li>${esc(patLabel(x))}</li>`).join("")}</ul></div>` : ""}
     ${attempts.length ? `<button class="btn ghost" id="chk">${L("Alle Versuche von Claude prüfen lassen", "Ask Claude to check all attempts")}</button>` : ""}
     ${s.kind === "pat" ? `<button class="btn primary" id="again">${L("Nochmal üben", "Practise again")}</button>` : `<button class="btn primary" id="new">${L("Neues Atom schreiben", "Write a new atom")}</button>`}
     <button class="btn ghost" id="pats" style="margin-top:8px">${L("Meine Fehlermuster", "My mistake patterns")}</button>
@@ -667,4 +673,47 @@ function reviewDone() {
   const ag = $("#again"); if (ag) ag.onclick = () => startPatPractice(s.pat);
   const nw = $("#new"); if (nw) nw.onclick = () => freeWrite();
   $("#pats").onclick = () => patsHub(); $("#hub").onclick = () => atomsHub();
+}
+
+/* =================================================================== MISSING ENGLISH */
+function missingEn() {
+  atomsReady();
+  const sents = [];
+  DB.atoms.forEach(a => { if (a.done) return; a.sents.forEach((s, si) => { if (!s.en && !s.pend) sents.push({ a, si }); }); });
+  const pats = Object.keys(DB.pats).filter(id => !DB.pats[id].en && patStats(id).atoms);
+  return { sents, pats, n: sents.length + pats.length };
+}
+function enPrompt(m) {
+  const P = ["Bitte gib mir für diese deutschen Sätze und Fehlermuster die englische Bedeutung. Ändere die deutschen Sätze nicht.",
+    "Antworte nur mit diesen Blöcken, gleiche Reihenfolge und Nummern wie unten:"];
+  if (m.sents.length) P.push("SÄTZE:", "1. (deutscher Satz unverändert) | (englische Bedeutung) | (2–4 Stichwörter in der Grundform)");
+  if (m.pats.length) P.push("MUSTER:", "1. (englischer Name des Musters, kurz)");
+  P.push("");
+  if (m.sents.length) { P.push("Deutsche Sätze:"); m.sents.forEach((x, i) => P.push(`${i + 1}. ${plain(x.a.sents[x.si].de)}`)); }
+  if (m.pats.length) { P.push("", "Deutsche Muster:"); m.pats.forEach((id, i) => P.push(`${i + 1}. ${patName(id)}`)); }
+  return P.join("\n");
+}
+function enFill() {
+  recStop();
+  const m = missingEn();
+  if (!m.n) { toast(L("Alles hat schon Englisch.", "Everything has English already.")); atomsHub(); return; }
+  const body = `<p class="muted" style="margin-top:4px">${L(`${m.sents.length} Sätze und ${m.pats.length} Muster haben noch kein Englisch. Claude ergänzt es in einem Schritt.`, `${m.sents.length} sentences and ${m.pats.length} patterns don't have English yet. Claude adds it in one go.`)}</p>
+    <div class="cb"><div class="step" style="margin-top:0"><span class="n">1</span><div class="b"><button class="btn petrol" id="enCopy" style="margin-top:0">${L("Anfrage kopieren", "Copy the request")}</button></div></div>
+    <div class="step"><span class="n">2</span><div class="b"><textarea class="ta2" id="enPaste" style="margin-top:0" placeholder="${L("Claudes Antwort hier einfügen", "Paste Claude's reply here")}"></textarea><button class="btn primary" id="enGo">${L("Übernehmen", "Use it")}</button></div></div></div>`;
+  shell(L("Englisch ergänzen", "Add English"), body, { back: L("Atome", "Atoms"), backTo: "aktiv", redraw: enFill });
+  $("#back").onclick = () => atomsHub();
+  const p = enPrompt(m);
+  $("#enCopy").onclick = () => { if (!shareText(p)) copyText(p, ok => toast(ok ? L("Kopiert. Jetzt bei Claude einfügen.", "Copied. Now paste it to Claude.") : L("Kopieren ging nicht", "Couldn't copy"))); };
+  $("#enGo").onclick = () => {
+    const r = parseClaude($("#enPaste").value);
+    if (!r && m.sents.length) { toast(L("Ich finde den Block „SÄTZE:“ nicht. Bitte die ganze Antwort einfügen.", "I can't find the “SÄTZE:” block. Please paste the whole reply.")); return; }
+    let ns = 0, np = 0;
+    if (r) {
+      m.sents.forEach((x, i) => { const y = r.sents[i], s = x.a.sents[x.si]; if (y && y.en) { s.en = y.en; if (!s.kw && y.kw) s.kw = y.kw; ns++; } });
+      m.pats.forEach((id, i) => { const e = (r.muster || [])[i]; if (e) { DB.pats[id].en = e; np++; } });
+    }
+    save();
+    toast(L(`${ns} Sätze und ${np} Muster ergänzt`, `Added ${ns} sentences and ${np} patterns`));
+    atomsHub();
+  };
 }
