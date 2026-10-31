@@ -438,7 +438,7 @@ function atomDetail(id, editing) {
     shell(a.t, `<div id="adEd"></div>`, { back: L("Atom", "Atom"), backTo: "aktiv", redraw: () => atomDetail(id, true) });
     $("#back").onclick = () => atomDetail(id);
     atomEditor($("#adEd"), stateFromAtom(a), { saveLabel: L("Speichern", "Save"), cancel: () => atomDetail(id),
-      onSave: s => { s.pats.forEach(n => patFind(n)); a.t = s.t.trim() || a.t; a.sents = buildSents(s, a.sents); a.corr = a.sents.map(x => plain(x.de)).join(" "); a.tr = s.tr; a.up = s.up; a.box = Math.min(...a.sents.map(x => x.box)); save(); toast(L("Gespeichert", "Saved")); atomDetail(id); } });
+      onSave: s => { s.pats.forEach(n => patFind(n)); a.t = s.t.trim() || a.t; a.sents = buildSents(s, a.sents); const before = a.corr; a.corr = a.sents.map(x => plain(x.de)).join(" "); a.tr = s.tr; if (s.up !== a.up) { a.up = s.up; a.upOld = false; } else if (a.up && a.corr !== before) a.upOld = true; a.box = Math.min(...a.sents.map(x => x.box)); save(); toast(L("Gespeichert", "Saved")); atomDetail(id); } });
     return;
   }
   const hist = a.hist.slice(-8).map(h => `${fmtDay(h.d)}: ${typeof h.ok === "boolean" ? (h.ok ? "✓" : "✗") : `${h.ok}/${h.n}`}`).join(" · ");
@@ -447,13 +447,28 @@ function atomDetail(id, editing) {
     <div class="hl"><div class="slist">${a.sents.map(s => `<div class="s"><div class="de"><span>${markedHtml(s.de)}</span><span class="sbox">Box ${Math.min(s.box, 5)}</span></div>${s.en ? `<div class="en">${esc(s.en)}</div>` : ""}${s.pend ? `<div class="en" style="color:var(--amber)">${L("wartet auf Claude", "waiting for Claude")}</div>` : ""}</div>`).join("")}</div></div>
     <div id="fixHost"></div>
     ${TTS ? `<button class="btn ghost" data-say="${esc(a.corr)}">${L("Ganzen Text anhören", "Play the whole text")}</button>` : ""}
-    ${a.up ? `<div class="up"><div class="lab"><span>${L("Eine Stufe höher (B1)", "One step up (B1)")}</span>${TTS ? `<button class="spk" data-say="${esc(a.up)}">${ICON.spk}</button>` : ""}</div>${esc(a.up)}</div>` : ""}
+    ${a.up ? `<div class="up"><div class="lab"><span>${L("Eine Stufe höher (B1)", "One step up (B1)")}</span>${TTS ? `<button class="spk" data-say="${esc(a.up)}">${ICON.spk}</button>` : ""}</div>${esc(a.up)}${a.upOld ? `<div class="gban" style="margin-top:10px"><b>${L("Nicht mehr aktuell:", "Out of date:")}</b> ${L("Du hast die Sätze geändert. Lass Claude diese Version anpassen.", "You changed the sentences. Let Claude update this version.")}
+      <div class="row2"><button class="btn petrol" id="upCopy">${L("Anfrage kopieren", "Copy the request")}</button></div>
+      <textarea class="ta2" id="upPaste" placeholder="${L("Claudes Antwort hier einfügen", "Paste Claude's reply here")}"></textarea>
+      <div class="row2"><button class="btn ghost" id="upKeep">${L("So lassen", "Keep as is")}</button><button class="btn primary" id="upGo">${L("Übernehmen", "Use it")}</button></div></div>` : ""}</div>` : ""}
     ${hist ? `<p class="muted small">${hist}</p>` : ""}
     <button class="btn primary" id="now">${L("Jetzt wiederholen", "Review now")}</button>
     <div class="row2"><button class="btn ghost" id="edit">${L("Bearbeiten", "Edit")}</button><button class="btn ghost" id="del">${L("Löschen", "Delete")}</button></div>`;
   shell(a.t, body, { back: L("Atome", "Atoms"), backTo: "aktiv", redraw: () => atomDetail(id) });
   $("#back").onclick = () => atomsHub();
   fixBlock($("#fixHost"), a, () => atomDetail(id));
+  if (a.upOld) {
+    const p = ["Ich habe meinen deutschen Text korrigiert. Bitte schreib die B1-Version passend zu meinen neuen Sätzen neu: derselbe Inhalt, eine Stufe besser, natürlich und auf B1-Niveau.", "Antworte am Ende mit genau diesem Block:", "B1-VERSION:", "(der neue Text)", "", "Meine Sätze:", a.corr, "", "Alte B1-Version:", a.up].join("\n");
+    $("#upCopy").onclick = () => { if (!shareText(p)) copyText(p, ok => toast(ok ? L("Kopiert. Jetzt bei Claude einfügen.", "Copied. Now paste it to Claude.") : L("Kopieren ging nicht", "Couldn't copy"))); };
+    $("#upKeep").onclick = () => { a.upOld = false; save(); atomDetail(id); };
+    $("#upGo").onclick = () => {
+      const raw = String($("#upPaste").value || "").replace(/\r/g, "").replace(/\*\*|__/g, "");
+      const m = raw.match(/B1[- ]VERSION\s*:?\s*([\s\S]+)$/i);
+      const t = (m ? m[1] : raw).split("\n").map(x => x.trim()).filter(x => x && !/^```/.test(x)).join(" ").trim();
+      if (!t) { toast(L("Bitte Claudes Antwort einfügen.", "Please paste Claude's reply.")); return; }
+      a.up = t; a.upOld = false; save(); toast(L("Aktualisiert", "Updated")); atomDetail(id);
+    };
+  }
   $("#now").onclick = () => startAtomReview([id]);
   $("#edit").onclick = () => atomDetail(id, true);
   let armed = false;
