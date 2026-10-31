@@ -314,27 +314,47 @@ function savedNote(host, a) {
   $("#toAtoms").onclick = () => atomsHub();
 }
 function pendingOf(a) { return a.sents.map((s, i) => i).filter(i => a.sents[i].pend); }
+function checkOf(a) { return a.sents.map((s, i) => i).filter(i => a.sents[i].pend || a.sents[i].chk); }
+function needsClaude(a) { return checkOf(a).length > 0 || !!a.upOld; }
 function fixPrompt(a) {
-  const P = ["Bei diesen Sätzen aus meinem Text „" + a.t + "“ musstest du raten, was ich meinte. Hier steht, was ich sagen wollte. Bitte schreib jeden Satz richtig auf Deutsch (B1, so einfach wie möglich).",
-    "Antworte am Ende mit genau diesem Block, ein Satz pro Zeile in derselben Reihenfolge:", "SÄTZE:", "1. (deutscher Satz) | (englische Bedeutung) | (2–4 Stichwörter in der Grundform)", ""];
-  pendingOf(a).forEach((i, n) => P.push(`${n + 1}. Geraten: ${plain(a.sents[i].de)} — Ich meinte: ${a.sents[i].pend}`));
+  const todo = checkOf(a);
+  const P = [];
+  if (todo.length) {
+    P.push(`Ich arbeite an meinem deutschen Text „${a.t}“ (Ziel B1). Bitte prüf diese Sätze und schreib jeden richtig auf Deutsch, so nah wie möglich an meiner Version. Bei „Ich meinte“ musstest du vorher raten: schreib, was ich wirklich sagen wollte.`, "");
+    todo.forEach((i, n) => { const x = a.sents[i]; P.push(x.pend ? `${n + 1}. Geraten: ${plain(x.de)} — Ich meinte: ${x.pend}` : `${n + 1}. Von mir geändert: ${plain(x.de)}`); });
+    P.push("");
+  } else P.push(`Ich habe meinen deutschen Text „${a.t}“ geändert.`, "");
+  if (a.up || todo.length) P.push("Mein ganzer Text im Moment:", a.sents.map(x => x.pend ? `[${x.pend}]` : plain(x.de)).join(" "), "");
+  P.push("Antworte am Ende mit genau diesen Blöcken:");
+  if (todo.length) P.push("SÄTZE:", "1. (korrigierter Satz, korrigierte Stellen in [eckigen Klammern]) | (englische Bedeutung) | (2–4 Stichwörter in der Grundform)", "(ein Satz pro Zeile, gleiche Nummern und Reihenfolge wie oben)");
+  P.push("B1-VERSION:", "(der ganze Text mit den neuen Sätzen, eine Stufe besser, natürlich und auf B1-Niveau)");
   return P.join("\n");
 }
 function fixBlock(host, a, after) {
-  const pend = pendingOf(a);
-  if (!host || !pend.length) { if (host) host.innerHTML = ""; return; }
-  host.innerHTML = `<div class="cb"><h3>${L(`${pend.length === 1 ? "1 Satz wartet" : pend.length + " Sätze warten"} auf Claude`, `${pend.length === 1 ? "1 sentence is" : pend.length + " sentences are"} waiting for Claude`)}</h3>
-    <div class="muted small">${L("Bis Claude sie geprüft hat, kommen sie nicht in deine Wiederholung. So lernst du nichts Falsches.", "Until Claude has checked them they stay out of your reviews, so you never learn anything wrong.")}</div>
+  if (!host) return;
+  const todo = checkOf(a), pend = pendingOf(a);
+  if (!needsClaude(a)) { host.innerHTML = ""; return; }
+  const what = pend.length ? L(`${pend.length === 1 ? "1 geratener Satz wartet" : pend.length + " geratene Sätze warten"} auf Claude. Bis dahin kommen sie nicht in deine Wiederholung.`, `${pend.length === 1 ? "1 guessed sentence is" : pend.length + " guessed sentences are"} waiting for Claude. Until then they stay out of your reviews.`)
+    : todo.length ? L(`Du hast ${todo.length === 1 ? "einen Satz" : todo.length + " Sätze"} geändert. Claude prüft sie und passt die B1-Version an, in einem Schritt.`, `You changed ${todo.length === 1 ? "a sentence" : todo.length + " sentences"}. Claude checks them and updates the B1 version, in one step.`)
+    : L("Die B1-Version passt nicht mehr zu deinen Sätzen. Claude passt sie an.", "The B1 version no longer matches your sentences. Claude updates it.");
+  host.innerHTML = `<div class="cb"><h3>${L("Von Claude prüfen lassen", "Check with Claude")}</h3>
+    <div class="muted small">${what}</div>
     <div class="step"><span class="n">1</span><div class="b"><button class="btn petrol" id="fxCopy" style="margin-top:0">${L("Anfrage kopieren", "Copy the request")}</button></div></div>
-    <div class="step"><span class="n">2</span><div class="b"><textarea class="ta2" id="fxPaste" style="margin-top:0" placeholder="${L("Claudes Antwort hier einfügen", "Paste Claude's reply here")}"></textarea><button class="btn primary" id="fxGo">${L("Übernehmen", "Use it")}</button></div></div></div>`;
+    <div class="step"><span class="n">2</span><div class="b"><textarea class="ta2" id="fxPaste" style="margin-top:0" placeholder="${L("Claudes Antwort hier einfügen", "Paste Claude's reply here")}"></textarea><button class="btn primary" id="fxGo">${L("Übernehmen", "Use it")}</button>
+    ${pend.length ? "" : `<button class="btn ghost" id="fxSkip" style="margin-top:8px">${L("Nicht nötig", "Not needed")}</button>`}</div></div></div>`;
   const p = fixPrompt(a);
   $("#fxCopy", host).onclick = () => { if (!shareText(p)) copyText(p, ok => toast(ok ? L("Kopiert. Jetzt bei Claude einfügen.", "Copied. Now paste it to Claude.") : L("Kopieren ging nicht", "Couldn't copy"))); };
+  const sk = $("#fxSkip", host); if (sk) sk.onclick = () => { a.sents.forEach(x => delete x.chk); a.upOld = false; save(); after(); };
   $("#fxGo", host).onclick = () => {
-    const r = parseClaude($("#fxPaste", host).value);
-    if (!r || r.sents.length < pend.length) { toast(L("Ich finde die Sätze nicht. Bitte die ganze Antwort einfügen.", "I can't find the sentences. Please paste the whole reply.")); return; }
-    pend.forEach((i, n) => { const s = a.sents[i], x = r.sents[n]; s.de = x.de; s.en = x.en || s.en; s.kw = x.kw || s.kw; delete s.pend; s.box = 1; });
-    a.corr = a.sents.map(x => plain(x.de)).join(" "); save();
-    toast(L("Übernommen", "Done")); after();
+    const raw = $("#fxPaste", host).value;
+    const r = parseClaude(raw) || { sents: [], up: "" };
+    if (!r.up) { const m = String(raw).replace(/\*\*|__/g, "").match(/B1[- ]VERSION\s*:?\s*([\s\S]+)$/i); if (m) r.up = m[1].split("\n").map(x => x.trim()).filter(x => x && !/^```/.test(x)).join(" "); }
+    if (todo.length && r.sents.length < todo.length) { toast(L("Ich finde die Sätze nicht. Bitte die ganze Antwort einfügen.", "I can't find the sentences. Please paste the whole reply.")); return; }
+    if (!todo.length && !r.up) { toast(L("Ich finde „B1-VERSION:“ nicht. Bitte die ganze Antwort einfügen.", "I can't find “B1-VERSION:”. Please paste the whole reply.")); return; }
+    todo.forEach((i, n) => { const s = a.sents[i], x = r.sents[n]; const changed = plain(x.de) !== plain(s.de); s.de = x.de; s.en = x.en || s.en; s.kw = x.kw || s.kw; if (s.pend || changed) s.box = 1; delete s.pend; delete s.chk; });
+    a.corr = a.sents.map(x => plain(x.de)).join(" ");
+    if (r.up) { a.up = r.up; a.upOld = false; }
+    save(); toast(L("Übernommen", "Done")); after();
   };
 }
 
@@ -402,7 +422,7 @@ function atomsHub() {
   recStop(); atomsReady();
   const due = atomsDue(), act = DB.atoms.filter(a => !a.done).sort((a, b) => a.due < b.due ? -1 : 1), grad = DB.atoms.filter(a => a.done);
   const pats = patsSorted(), weak = pats.find(p => p.n && p.score < 1 && p.atoms);
-  const row = a => `<button class="li" data-at="${a.id}"><span class="tx"><span class="d">${esc(a.t)}</span><span class="e">${pendingOf(a).length ? L("wartet auf Claude · ", "waiting for Claude · ") : ""}${a.done ? L("abgeschlossen", "graduated") : L(`Box ${Math.min(a.box, 5)} · ${a.sents.length} Sätze · ${fmtDay(a.due)}`, `Box ${Math.min(a.box, 5)} · ${a.sents.length} sentences · ${fmtDay(a.due)}`)}</span></span>${a.done ? `<span class="badge ok">✓</span>` : a.due <= today() ? `<span class="badge due">${L("fällig", "due")}</span>` : `<span class="badge">${Math.min(a.box, 5)}</span>`}</button>`;
+  const row = a => `<button class="li" data-at="${a.id}"><span class="tx"><span class="d">${esc(a.t)}</span><span class="e">${needsClaude(a) ? L("von Claude prüfen lassen · ", "check with Claude · ") : ""}${a.done ? L("abgeschlossen", "graduated") : L(`Box ${Math.min(a.box, 5)} · ${a.sents.length} Sätze · ${fmtDay(a.due)}`, `Box ${Math.min(a.box, 5)} · ${a.sents.length} sentences · ${fmtDay(a.due)}`)}</span></span>${a.done ? `<span class="badge ok">✓</span>` : a.due <= today() ? `<span class="badge due">${L("fällig", "due")}</span>` : `<span class="badge">${Math.min(a.box, 5)}</span>`}</button>`;
   const body = `<div class="stats"><div><b>${due.length}</b><span>${L("fällig", "due")}</span></div><div><b>${act.length}</b><span>${L("aktiv", "active")}</span></div><div><b>${pats.length}</b><span>${L("Muster", "patterns")}</span></div></div>
     <button class="hero" id="rev" ${due.length ? "" : "disabled"}><span class="ic">${due.length}</span><span><span class="tt">${L("Wiederholen", "Review")}</span><span class="ss">${due.length ? L("Mit Hinweisen, wenn du sie brauchst.", "With hints when you need them.") : L("Heute ist nichts fällig.", "Nothing is due today.")}</span></span></button>
     ${weak ? `<button class="hero alt" id="weak"><span class="ic">!</span><span><span class="tt">${L("Schwächstes Muster üben", "Practise your weakest pattern")}</span><span class="ss">${esc(weak.label)} · ${Math.round(weak.score * 100)} %</span></span></button>` : ""}
@@ -438,37 +458,23 @@ function atomDetail(id, editing) {
     shell(a.t, `<div id="adEd"></div>`, { back: L("Atom", "Atom"), backTo: "aktiv", redraw: () => atomDetail(id, true) });
     $("#back").onclick = () => atomDetail(id);
     atomEditor($("#adEd"), stateFromAtom(a), { saveLabel: L("Speichern", "Save"), cancel: () => atomDetail(id),
-      onSave: s => { s.pats.forEach(n => patFind(n)); a.t = s.t.trim() || a.t; a.sents = buildSents(s, a.sents); const before = a.corr; a.corr = a.sents.map(x => plain(x.de)).join(" "); a.tr = s.tr; if (s.up !== a.up) { a.up = s.up; a.upOld = false; } else if (a.up && a.corr !== before) a.upOld = true; a.box = Math.min(...a.sents.map(x => x.box)); save(); toast(L("Gespeichert", "Saved")); atomDetail(id); } });
+      onSave: s => { s.pats.forEach(n => patFind(n)); a.t = s.t.trim() || a.t; const oldDe = a.sents.map(x => plain(x.de)); const oldChk = a.sents.map(x => !!x.chk); a.sents = buildSents(s, a.sents); a.sents.forEach((x, i) => { if (!x.pend && (oldChk[i] || oldDe[i] !== plain(x.de))) x.chk = true; }); const before = oldDe.join(" "); a.corr = a.sents.map(x => plain(x.de)).join(" "); a.tr = s.tr; if (s.up !== a.up) { a.up = s.up; a.upOld = false; } else if (a.up && a.corr !== before) a.upOld = true; a.box = Math.min(...a.sents.map(x => x.box)); save(); toast(L("Gespeichert", "Saved")); atomDetail(id); } });
     return;
   }
   const hist = a.hist.slice(-8).map(h => `${fmtDay(h.d)}: ${typeof h.ok === "boolean" ? (h.ok ? "✓" : "✗") : `${h.ok}/${h.n}`}`).join(" · ");
   const body = `<div class="sit"><span class="lab">${a.done ? L("Abgeschlossen", "Graduated") : L(`Box ${Math.min(a.box, 5)} · nächste Wiederholung ${fmtDay(a.due)}`, `Box ${Math.min(a.box, 5)} · next review ${fmtDay(a.due)}`)}</span></div>
     <div class="sec-h">${L("Sätze", "Sentences")}</div>
-    <div class="hl"><div class="slist">${a.sents.map(s => `<div class="s"><div class="de"><span>${markedHtml(s.de)}</span><span class="sbox">Box ${Math.min(s.box, 5)}</span></div>${s.en ? `<div class="en">${esc(s.en)}</div>` : ""}${s.pend ? `<div class="en" style="color:var(--amber)">${L("wartet auf Claude", "waiting for Claude")}</div>` : ""}</div>`).join("")}</div></div>
+    <div class="hl"><div class="slist">${a.sents.map(s => `<div class="s"><div class="de"><span>${markedHtml(s.de)}</span><span class="sbox">Box ${Math.min(s.box, 5)}</span></div>${s.en ? `<div class="en">${esc(s.en)}</div>` : ""}${s.pend ? `<div class="en" style="color:var(--amber)">${L("wartet auf Claude", "waiting for Claude")}</div>` : s.chk ? `<div class="en" style="color:var(--amber)">${L("geändert, noch nicht geprüft", "changed, not checked yet")}</div>` : ""}</div>`).join("")}</div></div>
     <div id="fixHost"></div>
     ${TTS ? `<button class="btn ghost" data-say="${esc(a.corr)}">${L("Ganzen Text anhören", "Play the whole text")}</button>` : ""}
-    ${a.up ? `<div class="up"><div class="lab"><span>${L("Eine Stufe höher (B1)", "One step up (B1)")}</span>${TTS ? `<button class="spk" data-say="${esc(a.up)}">${ICON.spk}</button>` : ""}</div>${esc(a.up)}${a.upOld ? `<div class="gban" style="margin-top:10px"><b>${L("Nicht mehr aktuell:", "Out of date:")}</b> ${L("Du hast die Sätze geändert. Lass Claude diese Version anpassen.", "You changed the sentences. Let Claude update this version.")}
-      <div class="row2"><button class="btn petrol" id="upCopy">${L("Anfrage kopieren", "Copy the request")}</button></div>
-      <textarea class="ta2" id="upPaste" placeholder="${L("Claudes Antwort hier einfügen", "Paste Claude's reply here")}"></textarea>
-      <div class="row2"><button class="btn ghost" id="upKeep">${L("So lassen", "Keep as is")}</button><button class="btn primary" id="upGo">${L("Übernehmen", "Use it")}</button></div></div>` : ""}</div>` : ""}
+    ${a.up ? `<div class="up"><div class="lab"><span>${L("Eine Stufe höher (B1)", "One step up (B1)")}</span>${TTS ? `<button class="spk" data-say="${esc(a.up)}">${ICON.spk}</button>` : ""}</div>${esc(a.up)}</div>` : ""}
     ${hist ? `<p class="muted small">${hist}</p>` : ""}
     <button class="btn primary" id="now">${L("Jetzt wiederholen", "Review now")}</button>
     <div class="row2"><button class="btn ghost" id="edit">${L("Bearbeiten", "Edit")}</button><button class="btn ghost" id="del">${L("Löschen", "Delete")}</button></div>`;
   shell(a.t, body, { back: L("Atome", "Atoms"), backTo: "aktiv", redraw: () => atomDetail(id) });
   $("#back").onclick = () => atomsHub();
   fixBlock($("#fixHost"), a, () => atomDetail(id));
-  if (a.upOld) {
-    const p = ["Ich habe meinen deutschen Text korrigiert. Bitte schreib die B1-Version passend zu meinen neuen Sätzen neu: derselbe Inhalt, eine Stufe besser, natürlich und auf B1-Niveau.", "Antworte am Ende mit genau diesem Block:", "B1-VERSION:", "(der neue Text)", "", "Meine Sätze:", a.corr, "", "Alte B1-Version:", a.up].join("\n");
-    $("#upCopy").onclick = () => { if (!shareText(p)) copyText(p, ok => toast(ok ? L("Kopiert. Jetzt bei Claude einfügen.", "Copied. Now paste it to Claude.") : L("Kopieren ging nicht", "Couldn't copy"))); };
-    $("#upKeep").onclick = () => { a.upOld = false; save(); atomDetail(id); };
-    $("#upGo").onclick = () => {
-      const raw = String($("#upPaste").value || "").replace(/\r/g, "").replace(/\*\*|__/g, "");
-      const m = raw.match(/B1[- ]VERSION\s*:?\s*([\s\S]+)$/i);
-      const t = (m ? m[1] : raw).split("\n").map(x => x.trim()).filter(x => x && !/^```/.test(x)).join(" ").trim();
-      if (!t) { toast(L("Bitte Claudes Antwort einfügen.", "Please paste Claude's reply.")); return; }
-      a.up = t; a.upOld = false; save(); toast(L("Aktualisiert", "Updated")); atomDetail(id);
-    };
-  }
+
   $("#now").onclick = () => startAtomReview([id]);
   $("#edit").onclick = () => atomDetail(id, true);
   let armed = false;
