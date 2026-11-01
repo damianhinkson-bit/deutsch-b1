@@ -235,14 +235,14 @@ function aktiv() {
     ${item("mAt", ad || act || "0", L("Atome", "Atoms"), act ? L(`${ad} fällig · ${act} aktiv`, `${ad} due · ${act} active`) : L("Deine korrigierten Texte als Wiederholung", "Your corrected texts, for review"))}
     ${item("mV", vD || "Vp", L("Verben mit Präpositionen", "Verbs with prepositions"), L(`${VERBEN.length} Verben · ${vD} fällig`, `${VERBEN.length} verbs · ${vD} due`))}
     ${item("mR", rD || "Rm", L("Redemittel", "Useful phrases"), L(`${REDEMITTEL.length} Wendungen · ${rD} fällig`, `${REDEMITTEL.length} phrases · ${rD} due`))}
-    ${item("mG", "Gr", L("Grammatik-Trainer", "Grammar trainer"), L("A1, A2 und B1: öffnet deine Grammatik-App", "A1, A2 and B1: opens your grammar app"), true)}
+    ${item("mG", "Gr", L("Grammatik-Trainer", "Grammar trainer"), L("A1, A2 und B1, im Tab Grammatik", "A1, A2 and B1, in the Grammar tab"))}
    </div>
    <details class="fold"><summary>${L("So funktioniert die Korrektur", "How correction works")}</summary><div class="in"><p class="small" style="margin:0">${L("Nach dem Sprechen oder Schreiben tippst du auf „Teilen“ oder „Kopieren“. Die App macht daraus eine fertige Anfrage für Claude. Claude antwortet mit Erklärungen und einem Block mit KORREKTUR, FEHLERMUSTER und UMFORMEN. Diese Antwort fügst du wieder ein, und die App speichert den Text als Atom. Atome wiederholst du nach 1, 3, 7, 16 und 35 Tagen, zuerst aus dem Gedächtnis, später umgeformt und am Ende ganz frei.", "After speaking or writing, tap “Share” or “Copy”. The app turns it into a ready-made request for Claude. Claude replies with explanations and a block with KORREKTUR, FEHLERMUSTER and UMFORMEN. You paste that reply back and the app saves the text as an atom. You review atoms after 1, 3, 7, 16 and 35 days: first from memory, later transformed, and finally completely freely.")}</p></div></details>`;
   shell(L("Aktiv", "Active"), body, { redraw: aktiv, noLevel: true });
   const h = $("#hAtoms"); if (h) h.onclick = () => startAtomReview(atomsDue().map(a => a.id));
   $("#mSp").onclick = () => spHub(); $("#mSw").onclick = () => swHub(); $("#mAt").onclick = () => atomsHub();
   $("#mV").onclick = () => deckHub("v"); $("#mR").onclick = () => deckHub("r");
-  $("#mG").onclick = () => { try { window.open(GRAMMAR_URL, "_blank", "noopener"); } catch (e) { location.href = GRAMMAR_URL; } };
+  $("#mG").onclick = () => go("gram");
 }
 function aktivHome() {
   const ad = atomsDue().length, vD = deckDueCount("v"), rD = deckDueCount("r"), tot = ad + vD + rD;

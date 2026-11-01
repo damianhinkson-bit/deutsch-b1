@@ -50,6 +50,15 @@ button{cursor:pointer;border:none;background:none;padding:0}
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);border-top:1px solid var(--line);
   padding:6px max(6px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(6px,env(safe-area-inset-left,0px));display:flex;justify-content:center}
 .tabs-in{display:flex;width:100%;max-width:600px}
+body.gram-on .app{max-width:none;padding-bottom:0;min-height:0}
+.gframe{display:block;width:100%;border:0;height:calc(100vh - 64px - env(safe-area-inset-bottom,0px));height:calc(100dvh - 64px - env(safe-area-inset-bottom,0px));background:var(--bg)}
+.li-row{display:flex;align-items:stretch;border-bottom:1px solid var(--line)}
+.li-row .li{border-bottom:none;flex:1;min-width:0}
+.li-row.known .li .d,.li-row.known .li .e{opacity:.45}
+.kn{flex:0 0 auto;display:flex;align-items:center;gap:5px;padding:0 14px 0 4px;font-size:12px;font-weight:800;color:var(--muted)}
+.kn i{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-style:normal;font-size:14px;color:transparent}
+.li-row.known .kn i{background:var(--good);border-color:var(--good);color:#fff}
+.lv.kw{background:var(--good-tint);color:var(--good)}
 .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;border-radius:12px;color:var(--muted);font-size:11.5px;font-weight:700}
 .tab svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .tab[aria-current="page"]{color:var(--petrol-soft)}
@@ -253,6 +262,13 @@ function nextNew(n){
   for(const id of seq){ if(!DB.cards[id]&&!out.includes(id)){ out.push(id); if(out.length>=n) break; } }
   return out;
 }
+function isKnown(id){ const c=DB.cards[id]; return !!(c&&c.known); }
+function setKnown(id,on){
+  const c=DB.cards[id];
+  if(on){ if(c&&c.known) return; DB.cards[id]={lv:5,due:"9999-12-31",seen:0,ok:0,bad:0,d:today(),known:1,prev:c?JSON.stringify(c):""}; delete DB.miss[id]; }
+  else if(c&&c.known){ if(c.prev){ try{ DB.cards[id]=JSON.parse(c.prev); }catch(e){ delete DB.cards[id]; } } else delete DB.cards[id]; }
+  save();
+}
 function introduce(id){ if(DB.cards[id]) return; DB.cards[id]={lv:0,due:today(),seen:1,ok:0,bad:0,d:today()}; DB.days[today()]=(DB.days[today()]||0)+1; }
 function grade(id,okFirst){
   const c=DB.cards[id]; if(!c) return;
@@ -357,17 +373,28 @@ function distractors(w,n=3){
 
 /* ---------- router ---------- */
 let route="home", session=null, redraw=null;
-const TABS=[["home",()=>L("Heute","Today"),'<path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/>'],["ueben",()=>L("Üben","Practice"),'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>'],["liste",()=>L("Liste","Words"),'<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>'],["aktiv",()=>L("Aktiv","Active"),'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>'],["mehr",()=>L("Mehr","More"),'<circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/><circle cx="5" cy="12" r="1.5"/>']];
-function renderTabs(){ $("#tabs").innerHTML=TABS.map(([r,l,p])=>`<button class="tab" data-tab="${r}" ${route===r?'aria-current="page"':""}><svg viewBox="0 0 24 24">${p}</svg>${l()}</button>`).join(""); }
+const TABS=[["home",()=>L("Heute","Today"),'<path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/>'],["ueben",()=>L("Üben","Practice"),'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>'],["gram",()=>L("Grammatik","Grammar"),'<path d="M4 19V6a2 2 0 0 1 2-2h12v15H6a2 2 0 0 0-2 2"/><path d="M18 19v2H6"/><path d="M8 8h6M8 12h4"/>'],["aktiv",()=>L("Aktiv","Active"),'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>'],["mehr",()=>L("Mehr","More"),'<circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/><circle cx="5" cy="12" r="1.5"/>']];
+function renderTabs(){ const cur=TAB_OF[route]||route; $("#tabs").innerHTML=TABS.map(([r,l,p])=>`<button class="tab" data-tab="${r}" ${cur===r?'aria-current="page"':""}><svg viewBox="0 0 24 24">${p}</svg>${l()}</button>`).join(""); }
 document.addEventListener("click",e=>{const t=e.target.closest("[data-tab]"); if(t){ go(t.dataset.tab);} });
-function go(r){route=r;session=null;hush();if(typeof recStop==="function")recStop();renderTabs();({home:home,ueben:ueben,liste:liste,mehr:mehr,aktiv:aktiv})[r]();window.scrollTo(0,0);}
+const TAB_OF={liste:"ueben"};
+function go(r){route=r;session=null;hush();if(typeof recStop==="function")recStop();renderTabs();({home:home,ueben:ueben,liste:liste,mehr:mehr,aktiv:aktiv,gram:gram})[r]();window.scrollTo(0,0);}
 function shell(title,body,opts={}){
+  document.body.classList.remove("gram-on");
   $("#app").innerHTML=`<header class="hdr">${opts.back?`<button class="back" id="back">‹ ${esc(opts.back)}</button>`:""}<h1>${esc(title)}</h1>${opts.right?`<span class="right">${opts.right}</span>`:""}${opts.back||opts.noLevel?"":`<span class="lvlbtn" role="group" aria-label="${L("Stufe","Level")}">${LEVELS.map(l=>`<b data-lvl="${l}" class="${DB.level===l?"on":""}">${l}</b>`).join("")}</span>`}<button class="langbtn" id="langBtn" aria-label="${L("Sprache der App wechseln","Switch app language")}"><b class="${EN()?"":"on"}">DE</b><b class="${EN()?"on":""}">EN</b></button></header><main class="view">${persistOK?"":`<div class="warn">${L("Dein Fortschritt kann in diesem Browser nicht gespeichert werden. Er geht verloren, wenn du die Seite schließt.","Your progress can't be saved in this browser. It will be lost when you close the page.")}</div>`}${body}</main>`;
   if(opts.back) $("#back").onclick=()=>go(opts.backTo||route);
   redraw=opts.redraw||null;
   document.querySelectorAll("[data-lvl]").forEach(b=>b.onclick=()=>{ if(b.dataset.lvl===DB.level) return; setLevel(b.dataset.lvl); pr.theme="all"; listTheme="all"; session=null; hush(); go(route==="liste"||route==="ueben"||route==="mehr"?route:"home"); toast(`${b.dataset.lvl} · ${LW().length} ${L("Wörter","words")}`); });
   $("#langBtn").onclick=()=>{ DB.lang=EN()?"de":"en"; save(); renderTabs(); if(redraw) redraw(); else go(route); toast(L("App auf Deutsch","App in English")); };
 }
+
+/* ---------- GRAMMATIK: the grammar trainer, built in ---------- */
+function gram(){
+  redraw=null;
+  document.body.classList.add("gram-on");
+  $("#app").innerHTML=`<iframe class="gframe" src="grammatik/index.html?lang=${DB.lang}" title="${L("Grammatik-Trainer","Grammar trainer")}"></iframe>`;
+}
+
+window.addEventListener("message",e=>{ if(e.origin!==location.origin||!e.data||!e.data.deutschLang) return; const l=e.data.deutschLang==="en"?"en":"de"; if(DB.lang!==l){ DB.lang=l; save(); renderTabs(); } });
 
 /* ---------- HOME ---------- */
 function drillToday(){ pr.src="today"; pr.theme="all"; go("ueben"); }
@@ -382,14 +409,12 @@ function home(){
     : L("Tagesziel geschafft. Du kannst trotzdem weitermachen: ","Daily goal reached. You can keep going: ")+esc(preview)+"…";
   const body=`
    <div class="date">${esc(dateTxt)}</div>
-   <div class="big"><div class="n ${due?"":"zero"}">${due}</div><div class="l">${due?L("Wörter zum<br>Wiederholen","words to<br>review"):L("Alles<br>wiederholt","All<br>reviewed")}</div></div>
-   <button class="hero" id="goRev"><span class="ic">${due}</span><span><span class="tt">${L("Wiederholen","Review")}</span><span class="ss">${due?L("Fällige Wörter zuerst. Du kannst jederzeit aufhören.","Due words first. You can stop at any time."):L("Nichts fällig. Tippe zum freien Üben.","Nothing due. Tap to practise freely.")}</span></span></button>
    <button class="hero alt" id="goNew" ${nextIds.length?"":"disabled"}><span class="ic">${left||"+"+PACK}</span><span><span class="tt">${left?L("Neue Wörter","New words"):L("Mehr neue Wörter","More new words")}</span><span class="ss">${newSub}</span></span></button>
    <div class="pick-l">${L("Neue Wörter heute aus","Today's new words from")}</div>
    <div class="chips" id="pickRow"><button class="chip" data-pick="" aria-pressed="${!PICK()}">${L("Automatisch","Automatic")}</button>${levelThemes().map(t=>{const n=themeLeft(t);return n?`<button class="chip" data-pick="${t}" aria-pressed="${PICK()===t}">${esc(THEME(t))} · ${n}</button>`:"";}).join("")}</div>
    ${introducedSince(today()).length?`<button class="hero ghosty" id="drillT"><span class="ic">${introducedSince(today()).length}</span><span><span class="tt">${L("Heutige neue Wörter üben","Drill today's new words")}</span><span class="ss">${L("In jeder Art: Paare, Hören, Artikel, Schreiben, Verstehen.","Every way: pairs, listening, articles, writing, meaning.")}</span></span></button>`:""}
    ${aktivHome()}
-   <button class="row-sw" id="pauseSw" aria-pressed="${DB.pause}"><span class="tx"><b>${L("Neue Wörter pausieren","Pause new words")}</b><span class="muted small">${L("Wenn die Wiederholungen zu viel werden.","When reviews get too much.")}</span></span><span class="sw ${DB.pause?"on":""}"><i></i></span></button>
+   <button class="row-sw" id="pauseSw" aria-pressed="${DB.pause}"><span class="tx"><b>${L("Neue Wörter pausieren","Pause new words")}</b><span class="muted small">${L("Keine neuen Wörter, bis du es wieder einschaltest.","No new words until you switch it back on.")}</span></span><span class="sw ${DB.pause?"on":""}"><i></i></span></button>
    ${TTS?`<button class="row-sw" id="sndTest"><span class="tx"><b>${L("Ton testen","Test sound")}</b><span class="muted small">${L("Tippe hier. Du solltest „Guten Morgen“ hören.","Tap here. You should hear “Guten Morgen”.")}</span></span><span class="spk">${ICON.spk}</span></button>`:`<div class="tts-note">${L("Ton ist in dieser Ansicht nicht verfügbar. Öffne die App in Chrome, dann funktionieren Vorlesen und Hören.","Sound isn't available in this view. Open the app in Chrome and reading aloud will work.")}</div>`}
    <div class="strip"><div><b>${started}</b><span>${L("von","of")} ${LW().length} ${L("begonnen","started")}</span></div><div><b>${mastered}</b><span>${L("sicher (Stufe 4–5)","secure (level 4–5)")}</span></div><div><b>${DB.streak.last===today()||DB.streak.last===addDays(today(),-1)?DB.streak.n:0}</b><span>${L("Tage am Stück","days in a row")}</span></div></div>
    <div class="h2">${L("Tag","Day")} ${Math.min(dayNo,totalDays)} ${L("von","of")} ${totalDays} · ${L("Themen","Themes")}</div>
@@ -397,7 +422,6 @@ function home(){
    <p class="muted small">${editOrder?L("Mit den Pfeilen verschiebst du ein Thema. Automatisch lernst du die Themen von oben nach unten. Kleine Wörter kommen immer jeden Tag dazu.","Use the arrows to move a theme. On Automatic you learn the themes from top to bottom. Small words are always added every day."):L("Grün = sicher, Petrol = begonnen. Automatisch geht es von oben nach unten. Kleine Wörter kommen jeden Tag dazu.","Green = secure, teal = started. Automatic goes from top to bottom. Small words are added every day.")}</p>
    <div class="row2"><button class="btn ${editOrder?"primary":"ghost"}" id="ordBtn">${editOrder?L("Fertig","Done"):L("Reihenfolge ändern","Change order")}</button>${editOrder&&DB.order[DB.level]?`<button class="btn ghost" id="ordReset">${L("Zurücksetzen","Reset")}</button>`:""}</div>`;
   shell(`${LV()}-Wortschatz`,body,{redraw:home});
-  $("#goRev").onclick=()=>{ if(due) startReview(); else go("ueben"); };
   $("#goNew").onclick=()=>startNew();
   const dt=$("#drillT"); if(dt) dt.onclick=drillToday;
   bindAktivHome();
@@ -509,13 +533,13 @@ function finish(){
     const body=`<div class="result"><div class="pct">${pct}%</div><div class="lbl">${L("beim ersten Versuch richtig","right first time")}</div><p class="muted">${s.total} ${L("Wörter","words")} · ${s.right} ${L("sofort gewusst","known straight away")}</p></div>
      ${moreNew?`<button class="btn primary" id="more">${newLeft()>0?L(`Nächste ${Math.min(PACK,newLeft())} neue Wörter`,`Next ${Math.min(PACK,newLeft())} new words`):L(`Noch ${PACK} neue Wörter (über dem Tagesziel)`,`${PACK} more new words (beyond the daily goal)`)}</button>`:""}
      ${s.kind==="new"?`<button class="btn petrol" id="drill">${L("Heutige neue Wörter in allen Arten üben","Drill today's new words every way")}</button>`:""}
-     ${s.srs&&due?`<button class="btn petrol" id="rev">${due} ${L("fällige Wiederholungen","reviews due")}</button>`:""}
-     <button class="btn ghost" id="home">${s.srs?L("Zurück zu Heute","Back to Today"):L("Zurück zu Üben","Back to Practice")}</button>`;
+     ${s.kind==="rev"&&due?`<button class="btn petrol" id="rev">${due} ${L("fällige Wiederholungen","reviews due")}</button>`:""}
+     <button class="btn ghost" id="home">${s.kind==="new"?L("Zurück zu Heute","Back to Today"):L("Zurück zu Üben","Back to Practice")}</button>`;
     shell(quizTitle(s.kind),body,{redraw:draw});
     if(moreNew) $("#more").onclick=()=>startNew();
     const dr=$("#drill"); if(dr) dr.onclick=drillToday;
-    if(s.srs&&due) $("#rev").onclick=()=>startReview();
-    $("#home").onclick=()=>go(s.srs?"home":"ueben");
+    if(s.kind==="rev"&&due) $("#rev").onclick=()=>startReview();
+    $("#home").onclick=()=>go(s.kind==="new"?"home":"ueben");
   };
   session=null; draw();
 }
@@ -578,7 +602,13 @@ let pr={mode:"mix",theme:"all",src:"all",n:"20"};
 function ueben(){
   const pool=practicePool();
   const chip=(k,v,l)=>`<button class="chip" data-k="${k}" data-v="${v}" aria-pressed="${pr[k]===v}">${esc(l)}</button>`;
-  const body=`<p class="muted" style="margin-top:4px">${L("Freies Üben ändert deinen Wiederholungsplan nicht.","Free practice doesn't change your review schedule.")}</p>
+  const dueN=dueIds().length, knownN=LW().filter(w=>isKnown(w.id)).length;
+  const body=`<div class="menu" style="margin-top:4px">
+     <button class="item" id="openList"><span class="ic">≡</span><span class="tx"><span class="tt">${L(`Wortliste ${LV()}`,`Word list ${LV()}`)}</span><span class="ss">${L(`Alle ${LW().length} Wörter. Markiere, was du schon kannst (${knownN} bekannt).`,`All ${LW().length} words. Mark the ones you already know (${knownN} known).`)}</span></span></button>
+     <button class="item" id="openRev" ${dueN?"":"disabled"}><span class="ic">${dueN}</span><span class="tx"><span class="tt">${L("Wiederholen","Review")}</span><span class="ss">${dueN?L("Fällige Wörter, wenn du möchtest.","Due words, if you want to."):L("Nichts fällig.","Nothing due.")}</span></span></button>
+   </div>
+   <div class="h2">${L("Frei üben","Free practice")}</div>
+   <p class="muted" style="margin-top:0">${L("Freies Üben ändert deinen Wiederholungsplan nicht.","Free practice doesn't change your review schedule.")}</p>
    <div class="h2">${L("Abfrage","Mode")}</div><div class="chips">${chip("mode","mix",L("Gemischt","Mixed"))}${MODE_KEYS.map(k=>k==="hor"&&!TTS?"":chip("mode",k,MODE(k))).join("")}</div>
    <div class="h2">${L("Welche Wörter","Which words")}</div><div class="chips">${chip("src","today",L(`Heute neu (${introducedSince(today()).length})`,`New today (${introducedSince(today()).length})`))}${chip("src","week",L(`Letzte 7 Tage (${introducedSince(addDays(today(),-6)).length})`,`Last 7 days (${introducedSince(addDays(today(),-6)).length})`))}${chip("src","started",L("Schon begonnen","Already started"))}${chip("src","weak",L("Schwache","Weak words"))}${chip("src","all",L("Alle B1-Wörter","All B1 words"))}</div>
    <div class="h2">${L("Wie viele","How many")}</div><div class="chips">${chip("n","10","10")}${chip("n","20","20")}${chip("n","40","40")}${chip("n","all",L("Alle","All"))}</div>
@@ -590,6 +620,8 @@ function ueben(){
    <p class="muted small">${missCount()} ${L("Wörter mit Fehlern gemerkt.","words with mistakes remembered.")}</p>
    ${!TTS?`<p class="muted small">${L("Hören ist in diesem Browser nicht verfügbar.","Listening isn't available in this browser.")}</p>`:""}`;
   shell(L("Üben","Practice"),body,{redraw:ueben});
+  $("#openList").onclick=()=>go("liste");
+  $("#openRev").onclick=()=>{ if(dueIds().length) startReview(); };
   document.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{pr[b.dataset.k]=b.dataset.v;ueben();});
   bindMissLevel(ueben);
   $("#go").onclick=()=>{ const ids=(pr.src==="today"||pr.src==="week")?shuffle(pool).slice(0,sessN(pool.length)):pickSet(pool,sessN(pool.length)); if(pr.mode==="paa") startPairs(ids,{title:MODE("paa"),backLabel:L("Üben","Practice"),backTo:"ueben"}); else startQuiz(ids,"prac",{srs:false,mode:pr.mode}); };
@@ -600,7 +632,8 @@ function practicePool(){
   return LW().filter(w=>{
     if(pr.theme!=="all"&&w.t!==pr.theme) return false;
     const c=DB.cards[w.id];
-    if(pr.src==="started"&&!c) return false;
+    if(pr.src==="started"&&(!c||c.known)) return false;
+    if(pr.src!=="all"&&c&&c.known) return false;
     if(pr.src==="today"&&!(c&&c.d===today())) return false;
     if(pr.src==="week"&&!(c&&c.d>=addDays(today(),-6))) return false;
     if(pr.src==="weak"&&!((c&&(c.lv<=1||c.bad>c.ok))||DB.miss[w.id])) return false;
@@ -610,23 +643,32 @@ function practicePool(){
 }
 
 /* ---------- LISTE ---------- */
-let listTheme="all", listQ="", listLimit=80;
+let listTheme="all", listQ="", listLimit=80, listKnown="all";
 function liste(){
   const chip=(v,l)=>`<button class="chip" data-lt="${v}" aria-pressed="${listTheme===v}">${esc(l)}</button>`;
   const body=`<input class="search" id="q" type="search" placeholder="${L("Suchen: Deutsch oder Englisch","Search: German or English")}" value="${esc(listQ)}" aria-label="${L("Suchen","Search")}">
    <div class="chips">${chip("all",L("Alle","All"))}${levelThemes().map(k=>chip(k,THEME(k))).join("")}</div>
+   <div class="chips">${[["all",L("Alle Wörter","All words")],["open",L("Noch nicht bekannt","Not known yet")],["known",L("Bekannt","Known")]].map(([v,l])=>`<button class="chip" data-lk="${v}" aria-pressed="${listKnown===v}">${esc(l)}</button>`).join("")}</div>
+   <p class="muted small" style="margin:2px 2px 8px">${L("Tippe rechts auf den Kreis bei jedem Wort, das du schon kannst. Es zählt dann als gelernt und kommt nie als neues Wort.","Tap the circle on the right of every word you already know. It then counts as learned and never comes up as a new word.")}</p>
    <div id="res"></div>`;
-  shell(L(`Wortliste ${LV()}`,`Word list ${LV()}`),body,{redraw:liste});
+  shell(L(`Wortliste ${LV()}`,`Word list ${LV()}`),body,{back:L("Üben","Practice"),backTo:"ueben",redraw:liste});
+  document.querySelectorAll("[data-lk]").forEach(b=>b.onclick=()=>{listKnown=b.dataset.lk;listLimit=80;liste();});
   document.querySelectorAll("[data-lt]").forEach(b=>b.onclick=()=>{listTheme=b.dataset.lt;listLimit=80;liste();});
   $("#q").addEventListener("input",e=>{listQ=e.target.value;listLimit=80;drawList();});
   drawList();
 }
 function drawList(){
   const q=norm(listQ);
-  const rows=LW().filter(w=>(listTheme==="all"||w.t===listTheme)&&(!q||norm(full(w)+" "+w.en).includes(q)));
-  const lvTxt=c=>!c?L("neu","new"):c.lv>=4?L("sicher","secure"):L("Stufe ","Level ")+c.lv;
-  $("#res").innerHTML=rows.length?`<div class="list">${rows.slice(0,listLimit).map(w=>{const c=DB.cards[w.id];return `<button class="li" data-w="${w.id}"><span class="tx"><span class="d">${head(w)}</span><span class="e">${esc(w.en)}</span></span>${DB.miss[w.id]?`<span class="lv miss">${L("Fehler","mistake")}</span>`:""}<span class="lv ${c?"l"+c.lv:""}">${lvTxt(c)}</span></button>`;}).join("")}</div>${rows.length>listLimit?`<button class="btn ghost" id="moreL">${L("Mehr anzeigen","Show more")} (${rows.length-listLimit})</button>`:""}`:`<div class="empty">${L("Kein Wort gefunden.","No word found.")}</div>`;
+  const rows=LW().filter(w=>(listTheme==="all"||w.t===listTheme)&&(!q||norm(full(w)+" "+w.en).includes(q))&&(listKnown==="all"||(listKnown==="known")===isKnown(w.id)));
+  const lvTxt=c=>!c?L("neu","new"):c.known?L("bekannt","known"):c.lv>=4?L("sicher","secure"):L("Stufe ","Level ")+c.lv;
+  $("#res").innerHTML=rows.length?`<div class="list">${rows.slice(0,listLimit).map(w=>{const c=DB.cards[w.id],k=!!(c&&c.known);return `<div class="li-row ${k?"known":""}" id="r${w.id}"><button class="li" data-w="${w.id}"><span class="tx"><span class="d">${head(w)}</span><span class="e">${esc(w.en)}</span></span>${DB.miss[w.id]?`<span class="lv miss">${L("Fehler","mistake")}</span>`:""}<span class="lv ${c?(k?"kw":"l"+c.lv):""}">${lvTxt(c)}</span></button><button class="kn" data-kn="${w.id}" aria-pressed="${k}" aria-label="${L("Kenne ich schon","I know this")}"><i>✓</i></button></div>`;}).join("")}</div>${rows.length>listLimit?`<button class="btn ghost" id="moreL">${L("Mehr anzeigen","Show more")} (${rows.length-listLimit})</button>`:""}`:`<div class="empty">${L("Kein Wort gefunden.","No word found.")}</div>`;
   document.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>detail(+b.dataset.w));
+  document.querySelectorAll("[data-kn]").forEach(b=>b.onclick=()=>{
+    const id=+b.dataset.kn, on=!isKnown(id); setKnown(id,on);
+    const row=$("#r"+id), c=DB.cards[id], lv=row.querySelector(".lv:last-of-type");
+    row.classList.toggle("known",on); b.setAttribute("aria-pressed",on);
+    lv.className="lv "+(c?(c.known?"kw":"l"+c.lv):""); lv.textContent=!c?L("neu","new"):c.known?L("bekannt","known"):c.lv>=4?L("sicher","secure"):L("Stufe ","Level ")+c.lv;
+  });
   const m=$("#moreL"); if(m) m.onclick=()=>{listLimit+=120;drawList();};
 }
 function detail(id){
@@ -636,8 +678,10 @@ function detail(id){
     <div class="mode">${esc(THEME(w.t))}</div><div class="w ${full(w).length>18?"sm":""}">${head(w)}</div><div class="meta">${esc(metaLine(w))}</div><div class="en">${esc(w.en)}</div>${exBlock(w)}</div>
    ${TTS?`<div class="row2"><button class="btn petrol" data-say="${esc(full(w))}">${L("Wort anhören","Play word")}</button>${w.ex?`<button class="btn ghost" data-say="${esc(w.ex)}">${L("Satz anhören","Play sentence")}</button>`:""}</div>`:`<div class="tts-note">${L("Vorlesen geht in dieser Ansicht nicht. Öffne die App in Chrome, dann kannst du Wort und Satz hören.","Reading aloud doesn't work in this view. Open the app in Chrome to hear the word and sentence.")}</div>`}
    ${c?"":`<button class="btn primary" id="addW">${L("Dieses Wort jetzt lernen","Learn this word now")}</button>`}
-   <p class="muted small" style="text-align:center">${c?`${L("Stufe","Level")} ${c.lv} · ${L("nächste Wiederholung","next review")} ${dueTxt}`:L("Noch nicht gelernt","Not learned yet")}${DB.miss[id]?` · ${L("als Fehler gemerkt","remembered as a mistake")}`:""}</p>`;
+   <button class="btn ${c&&c.known?"ghost":"petrol"}" id="knW">${c&&c.known?L("Doch nicht bekannt","Not known after all"):L("Kenne ich schon","I already know this")}</button>
+   <p class="muted small" style="text-align:center">${c&&c.known?L("Als bekannt markiert","Marked as known"):c?`${L("Stufe","Level")} ${c.lv} · ${L("nächste Wiederholung","next review")} ${dueTxt}`:L("Noch nicht gelernt","Not learned yet")}${DB.miss[id]?` · ${L("als Fehler gemerkt","remembered as a mistake")}`:""}</p>`;
   shell(L("Wort","Word"),body,{back:L("Liste","Words"),backTo:"liste",redraw:()=>detail(id)});
+  $("#knW").onclick=()=>{ setKnown(id,!(DB.cards[id]&&DB.cards[id].known)); toast(isKnown(id)?L("Als bekannt markiert","Marked as known"):L("Markierung entfernt","Mark removed")); detail(id); };
   const a=$("#addW"); if(a) a.onclick=()=>{ introduce(id); save(); toast(L("Hinzugefügt. Es kommt heute in deine Wiederholung.","Added. It will come up in today's review.")); detail(id); };
 }
 
