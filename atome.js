@@ -15,6 +15,10 @@
   .ladder{display:flex;gap:4px;margin:12px 0 4px}
   .ladder i{flex:1;height:6px;border-radius:99px;background:var(--surface-2)}
   .ladder i.on{background:var(--amber)} .ladder i.top{background:var(--bad)}
+  .ladder i.cur{box-shadow:inset 0 0 0 2px var(--petrol-soft)} .ladder i.on.cur{box-shadow:none}
+  .legend{margin:6px 2px 0;font-size:13.5px;line-height:1.9;color:var(--muted)}
+  .legend span{border-radius:4px;padding:0 4px;font-weight:800}
+  .legend .g{background:var(--good-tint);color:var(--good)} .legend .r{background:var(--bad-tint);color:var(--bad);text-decoration:line-through}
   .lad-l{display:flex;justify-content:space-between;font-size:12px;font-weight:800;color:var(--muted)}
   .hl{margin-top:10px;background:var(--surface);border-radius:var(--r-md);box-shadow:var(--shadow);padding:12px 14px}
   .hl .lab{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:4px}
@@ -665,10 +669,9 @@ function reviewStep() {
   const spoken = a.k === "sp";
   const prev = single && R.kind === "due" && si0 > 0 ? `<div class="prev">${a.sents.slice(0, si0).map(s => `<b>${esc(plain(s.de))}</b>`).join(" ")}</div>` : "";
   const nextR = rung + 1;
-  const body = `<div class="cnt muted small" style="text-align:center;font-weight:700">${R.i + 1} ${L("von", "of")} ${R.steps.length}${R.kind === "pat" ? " · " + esc(patLabel(R.pat)) : ` · Box ${Math.min(...st.sis.map(si => a.sents[si].box), 5)}`}</div>
-    <div class="sit"><span class="lab">${esc(a.t)}${single ? ` · ${L("Satz", "Sentence")} ${si0 + 1}/${a.sents.length}` : ""}</span><p>${esc(ins)}</p>${prev}</div>
-    <div class="ladder">${[1, 2, 3, 4, 5, 6].map(n => `<i class="${n <= rung ? (n >= 4 ? "on top" : "on") : ""}"></i>`).join("")}</div>
-    <div class="lad-l"><span>${L("Hinweis", "Hint")}: ${esc(T(RUNGS[Math.max(1, rung)]))}</span><span></span></div>
+  const body = `<div class="cnt muted small" style="text-align:center;font-weight:700">${R.i + 1} ${L("von", "of")} ${R.steps.length}${R.kind === "pat" ? " · " + esc(patLabel(R.pat)) : ` · Box ${Math.min(...st.sis.map(si => a.sents[si].box), 5)}`} · ${esc(a.t)}</div>
+    ${phase === "rebuild" ? "" : `<div class="sit"><p>${esc(ins)}</p></div>`}
+    <div class="ladder" aria-label="${L("Sätze in diesem Text", "Sentences in this text")}">${[...new Set(R.steps.filter(x => x.aid === a.id).flatMap(x => x.sis))].sort((x, y) => x - y).map(i => { const r = R.res[rk(a.id, i)]; return `<i class="${r && r.g ? "on" : ""} ${st.sis.includes(i) ? "cur" : ""}"></i>`; }).join("")}</div>
     ${hintBlock(a, st.sis, Math.min(rung, 5), single)}
     ${shown ? "" : `${inputBox("rv", { value: R.att[k] || "", rows: single ? 3 : 7, draft: false, ph: spoken ? L("Sprich laut, dann tipp auf Stopp …", "Speak out loud, then tap Stop …") : L("Sprich oder schreib auf Deutsch …", "Speak or type in German …") })}
     <div class="row2">${nextR <= 5 ? `<button class="btn ghost" id="more">${L("Hinweis", "Hint")}: ${esc(T(RUNGS[nextR]))}</button>` : ""}<button class="btn primary" id="reveal">${L("Aufdecken", "Reveal")}</button></div>`}
@@ -685,7 +688,7 @@ function drawCompare(st, a, k, phase) {
   const att = (R.att[k] || "").trim(), single = st.sis.length === 1;
   const target = st.sis.map(si => plain(a.sents[si].de)).join(" ");
   const rows = st.sis.map(si => gradeRowHtml(a, si)).join("");
-  $("#cmp").innerHTML = `${att ? `<div class="sec-h">${L("Dein Versuch", "Your attempt")}</div><div class="model ${phase === "rebuild" ? "diff" : ""}">${phase === "rebuild" ? diffHtml(att, target) : esc(att)}</div>${phase === "rebuild" ? `<p class="muted small">${L("Grün = fehlte bei dir, rot durchgestrichen = zu viel oder anders.", "Green = missing in yours, red crossed out = extra or different.")}</p>` : ""}` : `<p class="muted small">${L("Ohne Versuch aufgedeckt.", "Revealed without an attempt.")}</p>`}
+  $("#cmp").innerHTML = `${att ? `<div class="sec-h">${L("Dein Versuch", "Your attempt")}</div><div class="model ${phase === "rebuild" ? "diff" : ""}">${phase === "rebuild" ? diffHtml(att, target) : esc(att)}</div>${phase === "rebuild" ? `<div class="legend"><div>${L(`<span class="g">Grün</span> = fehlte bei dir.`, `<span class="g">Green</span> = missing in yours.`)}</div><div>${L(`<span class="r">Rot</span> = zu viel oder anders.`, `<span class="r">Red</span> = extra or different.`)}</div></div>` : ""}` : `<p class="muted small">${L("Ohne Versuch aufgedeckt.", "Revealed without an attempt.")}</p>`}
     <div class="sec-h">${phase === "rebuild" ? L("So ist es richtig", "The correct version") : L("Dein Original zum Vergleich", "Your original, for comparison")} · ${L("wie gut ging es?", "how well did it go?")}</div>
     ${rows}
     ${phase !== "rebuild" && att ? `<button class="btn ghost" id="chk">${L("Unsicher? Von Claude prüfen lassen", "Not sure? Ask Claude to check")}</button>` : ""}
