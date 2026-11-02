@@ -237,12 +237,14 @@ function aktiv() {
     ${item("mR", rD || "Rm", L("Redemittel", "Useful phrases"), L(`${REDEMITTEL.length} Wendungen · ${rD} fällig`, `${REDEMITTEL.length} phrases · ${rD} due`))}
     ${item("mG", "Gr", L("Grammatik-Trainer", "Grammar trainer"), L("A1, A2 und B1, im Tab Grammatik", "A1, A2 and B1, in the Grammar tab"))}
    </div>
+   ${typeof fluencyMenu === "function" ? fluencyMenu() : ""}
    <details class="fold"><summary>${L("So funktioniert die Korrektur", "How correction works")}</summary><div class="in"><p class="small" style="margin:0">${L("Nach dem Sprechen oder Schreiben tippst du auf „Teilen“ oder „Kopieren“. Die App macht daraus eine fertige Anfrage für Claude. Claude antwortet mit Erklärungen und einem Block mit KORREKTUR, FEHLERMUSTER und UMFORMEN. Diese Antwort fügst du wieder ein, und die App speichert den Text als Atom. Atome wiederholst du nach 1, 3, 7, 16 und 35 Tagen, zuerst aus dem Gedächtnis, später umgeformt und am Ende ganz frei.", "After speaking or writing, tap “Share” or “Copy”. The app turns it into a ready-made request for Claude. Claude replies with explanations and a block with KORREKTUR, FEHLERMUSTER and UMFORMEN. You paste that reply back and the app saves the text as an atom. You review atoms after 1, 3, 7, 16 and 35 days: first from memory, later transformed, and finally completely freely.")}</p></div></details>`;
   shell(L("Aktiv", "Active"), body, { redraw: aktiv, noLevel: true });
   const h = $("#hAtoms"); if (h) h.onclick = () => startAtomReview(atomsDue().map(a => a.id));
   $("#mSp").onclick = () => spHub(); $("#mSw").onclick = () => swHub(); $("#mAt").onclick = () => atomsHub();
   $("#mV").onclick = () => deckHub("v"); $("#mR").onclick = () => deckHub("r");
   $("#mG").onclick = () => go("gram");
+  if (typeof bindFluencyMenu === "function") bindFluencyMenu();
 }
 function aktivHome() {
   const ad = atomsDue().length, vD = deckDueCount("v"), rD = deckDueCount("r"), tot = ad + vD + rD;
@@ -420,8 +422,8 @@ const DECKS = {
        filters: { all: ["Alle", "All"], A: ["+ Akkusativ", "+ accusative"], D: ["+ Dativ", "+ dative"] },
        filt: (it, f) => f === "all" || it.cas === f },
   r: { name: ["Redemittel", "Useful phrases"], items: REDEMITTEL, by: RBY,
-       modes: { situation: ["Situation", "Situation"], karte: ["Karte", "Card"], satzbau: ["Satzbau", "Word order"], hoeren: ["Hören", "Listening"] },
-       modesFor: it => { const m = ["situation", "karte"]; if (rmTokens(it).length >= 3) m.push("satzbau"); if (TTS) m.push("hoeren"); return m; },
+       modes: { situation: ["Situation", "Situation"], karte: ["Karte", "Card"], satzbau: ["Satzbau", "Word order"], hoeren: ["Hören", "Listening"], sagen: ["Sagen", "Say it"] },
+       modesFor: it => { const m = ["situation", "karte", "sagen"]; if (rmTokens(it).length >= 3) m.push("satzbau"); if (TTS) m.push("hoeren"); return m; },
        filters: Object.assign({ all: ["Alle", "All"] }, Object.fromEntries(Object.keys(RM_CATS).map(k => [k, [RM_CATS[k][0], RM_CATS[k][1]]]))),
        filt: (it, f) => f === "all" || it.cat === f }
 };
@@ -505,6 +507,8 @@ function deckAsk() {
     } else if (c.mode === "satzbau") {
       if (!c.tok) { const tk = rmTokens(it); let sh = shuffle(tk.map((t, i) => ({ t, i }))); if (sh.every((x, k) => x.i === k) && tk.length > 1) sh = sh.slice(1).concat(sh[0]); c.tok = sh; c.ans = []; }
       inner = `<div class="mode">${L("Satzbau", "Word order")}</div><div class="en">${esc(it.en)}</div><div class="tokens ans" id="ans">${c.ans.map((x, k) => `<button class="tok" data-a="${k}">${esc(x.t)}</button>`).join("")}</div><div class="tokens" id="pool">${c.tok.map((x, k) => c.ans.includes(x) ? "" : `<button class="tok" data-p="${k}">${esc(x.t)}</button>`).join("")}</div><button class="btn petrol" id="chk" ${c.ans.length === c.tok.length ? "" : "disabled"}>${L("Prüfen", "Check")}</button>`;
+    } else if (c.mode === "sagen") {
+      inner = rmSayHtml(it);
     } else {
       inner = `<div class="mode">${L("Karte", "Card")}</div><div class="en" style="font-size:22px">${esc(it.en)}</div><div class="meta">${L("Wie sagt man das auf Deutsch?", "How do you say it in German?")}</div><div id="kb"><button class="btn petrol" id="flip">${L("Aufdecken", "Reveal")}</button></div>`;
     }
@@ -524,6 +528,7 @@ function deckAsk() {
     document.querySelectorAll("[data-a]").forEach(b => b.onclick = () => { c.ans.splice(+b.dataset.a, 1); deckAsk(); });
     $("#chk").onclick = () => { const ok = c.ans.map(x => x.t).join(" ") === rmTokens(it).join(" "); document.querySelectorAll(".tok").forEach(x => x.disabled = true); $("#ans").style.borderColor = ok ? "var(--good)" : "var(--bad)"; $("#chk").disabled = true; deckAnswer(ok); };
   }
+  if (s.d === "r" && c.mode === "sagen") rmSayBind(it, ok => deckAnswer(ok));
   if (c.mode === "karte") $("#flip").onclick = () => {
     $("#kb").innerHTML = `<div class="w sm" style="margin-top:14px">${esc(s.d === "v" ? verbLabel(it) : it.de)}</div><div class="row2"><button class="btn bad" id="kNo">${L("Nicht gewusst", "Didn't know")}</button><button class="btn petrol" id="kOk">${L("Gewusst", "Knew it")}</button></div>`;
     if (TTS && DB.autoSay !== false) say(s.d === "v" ? it.ex.replace(/[\[\]]/g, "") : it.de.replace(/…/g, ""));
@@ -547,7 +552,7 @@ function deckAnswer(ok) {
   const it = c.it, id = it.id, isFirst = !(id in s.first);
   if (isFirst) s.first[id] = ok;
   $("#after").innerHTML = `<div class="fb ${ok ? "good" : "bad"}"><b>${ok ? L("Richtig.", "Correct.") : L("Nicht ganz.", "Not quite.")}</b></div>${deckItemHtml(s.d, it)}<button class="btn primary" id="nx">${L("Weiter", "Next")}</button>`;
-  if (c.mode !== "karte" && c.mode !== "hoeren" && TTS && DB.autoSay !== false) say(s.d === "v" ? it.ex.replace(/[\[\]]/g, "") : it.de.replace(/…/g, ""));
+  if (c.mode !== "karte" && c.mode !== "hoeren" && c.mode !== "sagen" && TTS && DB.autoSay !== false) say(s.d === "v" ? it.ex.replace(/[\[\]]/g, "") : it.de.replace(/…/g, ""));
   s.queue.shift();
   if (ok) { s.done++; if (s.first[id]) s.right++; if (s.srs) dkGrade(s.d, id, s.first[id]); }
   else { const at = Math.min(s.queue.length, 3 + Math.floor(Math.random() * 3)); s.queue.splice(at, 0, id); }
