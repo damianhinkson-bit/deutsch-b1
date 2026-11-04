@@ -568,7 +568,7 @@ function atomDetail(id, editing) {
   fixBlock($("#fixHost"), a, () => atomDetail(id));
 
   const nw = $("#now"); if (nw) nw.onclick = () => startAtomReview([id], true);
-  $("#drA").onclick = () => startDrill(shuffle(drillPool("all", id)), () => atomDetail(id));
+  $("#drA").onclick = () => drillHub(id);
   $("#edit").onclick = () => atomDetail(id, true);
   let armed = false;
   $("#del").onclick = e => { if (!armed) { armed = true; e.target.textContent = L("Nochmal tippen zum Löschen", "Tap again to delete"); e.target.classList.add("bad"); return; } DB.atoms = DB.atoms.filter(x => x.id !== id); save(); toast(L("Gelöscht", "Deleted")); atomsHub(); };
@@ -917,27 +917,43 @@ function drillPool(src, aid) {
   return out;
 }
 let DP = { src: "weak", n: "20" };
-function drillHub() {
+function drillChosen() { const all = Object.keys(DTYPES); const c = Array.isArray(DB.drillT) ? DB.drillT.filter(t => all.includes(t)) : []; return c.length ? c : all; }
+function typesFor(x) { const ch = drillChosen(); return drillTypes(x).filter(t => ch.includes(t)); }
+function drillHub(aid) {
   recStop(); atomsReady();
+  const a0 = aid ? atomById(aid) : null; if (aid && !a0) { atomsHub(); return; }
   const chip = (k, v, l) => `<button class="chip" data-k="${k}" data-v="${v}" aria-pressed="${DP[k] === v}">${esc(l)}</button>`;
-  const cnt = s => drillPool(s).length;
-  const pool = drillPool(DP.src), n = DP.n === "all" ? pool.length : Math.min(pool.length, +DP.n);
-  const body = `<p class="muted" style="margin-top:4px">${L("Deine eigenen Sätze in allen Übungsarten: Lücke tippen, Auswahl, Satzbau und Umformen. Freies Üben: deine Boxen ändern sich nicht.", "Your own sentences in every drill type: type the gap, multiple choice, word order and transform. Free practice: your boxes don't change.")}</p>
-    <div class="h2">${L("Welche Sätze", "Which sentences")}</div>
-    <div class="chips">${chip("src", "weak", L(`Box 1–2 (${cnt("weak")})`, `Box 1–2 (${cnt("weak")})`))}${chip("src", "due", L(`Heute fällig (${cnt("due")})`, `Due today (${cnt("due")})`))}${chip("src", "all", L(`Alle (${cnt("all")})`, `All (${cnt("all")})`))}</div>
+  const ch = drillChosen(), allOn = ch.length === Object.keys(DTYPES).length;
+  const fit = list => list.filter(it => typesFor(it.a.sents[it.si]).length);
+  const cnt = src => fit(drillPool(src)).length;
+  const pool = fit(drillPool(DP.src, aid)), n = DP.n === "all" ? pool.length : Math.min(pool.length, +DP.n);
+  const body = `<p class="muted" style="margin-top:4px">${a0 ? L(`Nur „${esc(a0.t)}“. `, `Only “${esc(a0.t)}”. `) : ""}${L("Freies Üben: deine Boxen ändern sich nicht.", "Free practice: your boxes don't change.")}</p>
+    <div class="h2">${L("Übungsarten", "Drill types")}</div>
+    <div class="chips" style="flex-wrap:wrap;overflow:visible"><button class="chip" data-ty="all" aria-pressed="${allOn}">${L("Alle gemischt", "All mixed")}</button>${Object.keys(DTYPES).map(t => `<button class="chip" data-ty="${t}" aria-pressed="${!allOn && ch.includes(t)}">${esc(T(DTYPES[t]))}</button>`).join("")}</div>
+    <p class="muted small" style="margin:0 2px">${L("Tippe eine oder mehrere Arten an.", "Tap one or more types.")}</p>
+    ${a0 ? "" : `<div class="h2">${L("Welche Sätze", "Which sentences")}</div>
+    <div class="chips">${chip("src", "weak", L(`Box 1–2 (${cnt("weak")})`, `Box 1–2 (${cnt("weak")})`))}${chip("src", "due", L(`Heute fällig (${cnt("due")})`, `Due today (${cnt("due")})`))}${chip("src", "all", L(`Alle (${cnt("all")})`, `All (${cnt("all")})`))}</div>`}
     <div class="h2">${L("Wie viele", "How many")}</div>
     <div class="chips">${chip("n", "10", "10")}${chip("n", "20", "20")}${chip("n", "all", L("Alle", "All"))}</div>
-    <button class="btn primary" id="go" ${n ? "" : "disabled"}>${n ? L(`${n} Übungen starten`, `Start ${n} drills`) : L("Keine Sätze in dieser Auswahl", "No sentences in this selection")}</button>`;
-  shell(L("Gemischt üben", "Mixed practice"), body, { back: L("Atome", "Atoms"), backTo: "aktiv", redraw: drillHub });
-  $("#back").onclick = () => atomsHub();
-  document.querySelectorAll("[data-k]").forEach(b => b.onclick = () => { DP[b.dataset.k] = b.dataset.v; drillHub(); });
-  $("#go").onclick = () => startDrill(shuffle(pool).slice(0, n), () => drillHub());
+    <button class="btn primary" id="go" ${n ? "" : "disabled"}>${n ? L(`${n} Übungen starten`, `Start ${n} drills`) : L("Keine passenden Sätze in dieser Auswahl", "No matching sentences in this selection")}</button>
+    ${!n && pool.length === 0 && !allOn && ch.every(t => t === "gap" || t === "mc") ? `<p class="muted small">${L("Lücke und Auswahl brauchen Sätze mit korrigierten Stellen in [Klammern].", "Gap and multiple choice need sentences with corrected spots in [brackets].")}</p>` : ""}`;
+  shell(L("Gemischt üben", "Mixed practice"), body, { back: a0 ? L("Atom", "Atom") : L("Atome", "Atoms"), backTo: "aktiv", redraw: () => drillHub(aid) });
+  $("#back").onclick = () => a0 ? atomDetail(aid) : atomsHub();
+  document.querySelectorAll("[data-k]").forEach(b => b.onclick = () => { DP[b.dataset.k] = b.dataset.v; drillHub(aid); });
+  document.querySelectorAll("[data-ty]").forEach(b => b.onclick = () => {
+    const t = b.dataset.ty;
+    if (t === "all") DB.drillT = [];
+    else { let c = allOn ? [] : ch.slice(); c = c.includes(t) ? c.filter(x => x !== t) : c.concat(t); DB.drillT = c; }
+    save(); drillHub(aid);
+  });
+  $("#go").onclick = () => startDrill(shuffle(pool).slice(0, n), () => drillHub(aid));
 }
 let DR = null;
 function startDrill(items, back) {
   if (!items.length) { toast(L("Keine Sätze zum Üben.", "No sentences to practise.")); return; }
   let k = Math.floor(Math.random() * 4);
-  const steps = items.map(it => { const t = drillTypes(it.a.sents[it.si]); const type = t[k++ % t.length]; return { aid: it.a.id, si: it.si, type }; });
+  const steps = items.map(it => { const t = typesFor(it.a.sents[it.si]); if (!t.length) return null; const type = t[k++ % t.length]; return { aid: it.a.id, si: it.si, type }; }).filter(Boolean);
+  if (!steps.length) { toast(L("Keine passenden Sätze für diese Übungsarten.", "No matching sentences for these drill types.")); return; }
   DR = { steps, i: 0, res: [], back, all: items };
   drillStep();
 }

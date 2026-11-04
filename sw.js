@@ -1,4 +1,4 @@
-const CACHE="b1-wortschatz-v24";
+const CACHE="b1-wortschatz-v25";
 const CORE=["./","index.html","aktiv-data.js","aktiv.js","atome.js","fluency-data.js","fluency.js","manifest.webmanifest","icon-192.png","icon-512.png",
   "grammatik/index.html","grammatik/fonts/bricolage.woff2"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));});
