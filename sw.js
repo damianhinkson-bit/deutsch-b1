@@ -1,4 +1,4 @@
-const CACHE="b1-wortschatz-v25";
+const CACHE="b1-wortschatz-v26";
 const CORE=["./","index.html","aktiv-data.js","aktiv.js","atome.js","fluency-data.js","fluency.js","manifest.webmanifest","icon-192.png","icon-512.png",
   "grammatik/index.html","grammatik/fonts/bricolage.woff2"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));});
@@ -12,7 +12,8 @@ self.addEventListener("fetch",e=>{
   const key=new URL(p.endsWith("/")?p+"index.html":p, url.origin).href;
   if(r.mode==="navigate"||p.endsWith("/")||p.endsWith(".html")||p.endsWith(".js")){
     // pages and scripts: try the network for updates, fall back to the saved copy offline
-    e.respondWith(fetch(r).then(res=>{if(res.ok){const c=res.clone();caches.open(CACHE).then(x=>x.put(key,c));}return res;}).catch(()=>caches.match(key).then(hit=>hit||caches.match(r))));
+    // no-cache: always ask GitHub for the newest version (it lets browsers keep old copies for 10 minutes)
+    e.respondWith(fetch(url.href,{cache:"no-cache",credentials:"same-origin"}).then(res=>{if(res.ok){const c=res.clone();caches.open(CACHE).then(x=>x.put(key,c));}return res;}).catch(()=>caches.match(key).then(hit=>hit||caches.match(r))));
     return;
   }
   // everything else (icons, fonts): saved copy first
