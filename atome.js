@@ -514,6 +514,7 @@ function atomsHub() {
   const body = `<div class="boxes">${boxes}</div>
     <p class="muted small" style="margin:0 2px 10px">${L(`Höchstens ${BOX_CAP} Sätze pro Box.`, `At most ${BOX_CAP} sentences per box.`)}${waitN ? " " + L(`${waitN} neue Sätze warten auf Platz in Box 1.`, `${waitN} new sentences are waiting for room in box 1.`) : ""}</p>
     <button class="hero" id="rev" ${dueN ? "" : "disabled"}><span class="ic">${dueN}</span><span><span class="tt">${L("Wiederholen", "Review")}</span><span class="ss">${dueN ? L(`${dueN} Sätze aus ${due.length} Atomen.`, `${dueN} sentences from ${due.length} atoms.`) : L("Heute ist nichts fällig.", "Nothing is due today.")}</span></span></button>
+    <button class="hero alt" id="drill"><span class="ic">✦</span><span><span class="tt">${L("Gemischt üben", "Mixed practice")}</span><span class="ss">${L("Lücke, Auswahl, Satzbau, Umformen mit deinen Sätzen", "Gap, choice, word order and transform with your sentences")}</span></span></button>
     ${weak ? `<button class="hero alt" id="weak"><span class="ic">!</span><span><span class="tt">${L("Schwächstes Muster üben", "Practise your weakest pattern")}</span><span class="ss">${esc(weak.label)} · ${Math.round(weak.score * 100)} %</span></span></button>` : ""}
     <div class="seg" id="mode"><button data-m="satz" aria-pressed="${DB.atomMode === "satz"}">${L("Satz für Satz", "Sentence by sentence")}</button><button data-m="text" aria-pressed="${DB.atomMode === "text"}">${L("Ganzer Text", "Whole text")}</button></div>
     <div class="menu" style="margin-top:12px">
@@ -531,6 +532,7 @@ function atomsHub() {
       <p style="margin-bottom:0">${L(`Keine Box hat mehr als ${BOX_CAP} Sätze. Ist eine Box voll, rückt ihr stärkster Satz eine Box höher. Neue Sätze warten, bis in Box 1 Platz ist. Nach Box 5 ist ein Satz fertig.`, `No box holds more than ${BOX_CAP} sentences. When a box is full, its strongest sentence moves up one box. New sentences wait until box 1 has room. After box 5 a sentence is done.`)}</p></div></details>`;
   shell(L("Atome", "Atoms"), body, { back: L("Aktiv", "Active"), backTo: "aktiv", redraw: atomsHub });
   $("#rev").onclick = () => { if (dueN) startAtomReview(due.map(a => a.id)); };
+  $("#drill").onclick = () => drillHub();
   const w = $("#weak"); if (w) w.onclick = () => startPatPractice(weak.id);
   document.querySelectorAll("#mode button").forEach(b => b.onclick = () => { DB.atomMode = b.dataset.m; save(); document.querySelectorAll("#mode button").forEach(x => x.setAttribute("aria-pressed", x === b)); });
   $("#mPats").onclick = () => patsHub();
@@ -559,12 +561,14 @@ function atomDetail(id, editing) {
     ${a.up ? `<div class="up"><div class="lab"><span>${L("Eine Stufe höher (B1)", "One step up (B1)")}</span>${TTS ? `<button class="spk" data-say="${esc(a.up)}">${ICON.spk}</button>` : ""}</div>${esc(a.up)}</div>` : ""}
     ${hist ? `<p class="muted small">${hist}</p>` : ""}
     ${a.sents.some(x => isLive(x) && !x.pend) ? `<button class="btn primary" id="now">${L("Jetzt wiederholen", "Review now")}</button>` : ""}
+    <button class="btn petrol" id="drA">${L("Dieses Atom gemischt üben", "Mixed practice for this atom")}</button>
     <div class="row2"><button class="btn ghost" id="edit">${L("Bearbeiten", "Edit")}</button><button class="btn ghost" id="del">${L("Löschen", "Delete")}</button></div>`;
   shell(a.t, body, { back: L("Atome", "Atoms"), backTo: "aktiv", redraw: () => atomDetail(id) });
   $("#back").onclick = () => atomsHub();
   fixBlock($("#fixHost"), a, () => atomDetail(id));
 
   const nw = $("#now"); if (nw) nw.onclick = () => startAtomReview([id], true);
+  $("#drA").onclick = () => startDrill(shuffle(drillPool("all", id)), () => atomDetail(id));
   $("#edit").onclick = () => atomDetail(id, true);
   let armed = false;
   $("#del").onclick = e => { if (!armed) { armed = true; e.target.textContent = L("Nochmal tippen zum Löschen", "Tap again to delete"); e.target.classList.add("bad"); return; } DB.atoms = DB.atoms.filter(x => x.id !== id); save(); toast(L("Gelöscht", "Deleted")); atomsHub(); };
@@ -824,6 +828,217 @@ function enFill() {
     toast(L(`${ns} Sätze und ${np} Muster ergänzt`, `Added ${ns} sentences and ${np} patterns`));
     atomsHub();
   };
+}
+
+/* =================================================================== MIXED PRACTICE (drill types on your own sentences)
+   Extra practice only: nothing here changes boxes or due dates.
+   Types: gap (type the [corrected] spots), mc (pick the right form), sb (word order), uf (transform, checked by Claude). */
+(function addDrillStyles() {
+  const css = `
+  .dr-en{font-size:15px;color:var(--muted);margin-top:4px}
+  .dr-sent{font-size:20px;font-weight:700;line-height:1.7;margin:12px 0 4px}
+  .dr-sent input{font:inherit;font-weight:800;width:auto;min-width:70px;max-width:100%;padding:2px 8px;border:none;border-bottom:3px solid var(--amber);background:var(--amber-tint);border-radius:8px 8px 0 0;color:var(--ink);outline:none}
+  .dr-sent input.ok{border-bottom-color:var(--good);background:var(--good-tint)} .dr-sent input.no{border-bottom-color:var(--bad);background:var(--bad-tint)}
+  .dr-sent .blank{display:inline-block;min-width:60px;border-bottom:3px solid var(--amber);color:var(--amber);text-align:center}
+  .dr-opts{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+  .dr-opts button{padding:14px;border-radius:var(--r-md);border:2px solid var(--line);background:var(--surface);font-size:18px;font-weight:800;text-align:left}
+  .dr-opts button.ok{background:var(--good);border-color:var(--good);color:#fff} .dr-opts button.no{background:var(--bad);border-color:var(--bad);color:#fff} .dr-opts button.dim{opacity:.45}
+  .dr-ans{min-height:52px}
+  .dr-ans .tok{cursor:pointer}
+  .dr-pool .tok.used{visibility:hidden}
+  .dr-type{display:inline-block;font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;background:var(--amber-tint);color:var(--ink);border-radius:99px;padding:3px 9px}
+  `;
+  const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
+})();
+const DTYPES = { gap: ["Lücke tippen", "Type the gap"], mc: ["Auswahl", "Multiple choice"], sb: ["Satzbau", "Word order"], uf: ["Umformen", "Transform"] };
+const dNorm = t => String(t || "").toLowerCase().replace(/ß/g, "ss").replace(/[.,!?;:"„“'()«»…–-]/g, " ").replace(/\s+/g, " ").trim();
+const gapsOf = de => { const out = []; String(de).replace(/\[([^\]]+)\]/g, (m, x) => { out.push(x.trim()); return m; }); return out; };
+
+/* wrong options for multiple choice: typical confusions, never the right answer */
+const DFAM = [["der", "die", "das", "den", "dem", "des"], ["ein", "eine", "einen", "einem", "einer", "eines"], ["kein", "keine", "keinen", "keinem", "keiner"],
+  ["mein", "meine", "meinen", "meinem", "meiner"], ["dein", "deine", "deinen", "deinem", "deiner"], ["sein", "seine", "seinen", "seinem", "seiner"],
+  ["ihr", "ihre", "ihren", "ihrem", "ihrer"], ["unser", "unsere", "unseren", "unserem", "unserer"], ["dieser", "diese", "dieses", "diesen", "diesem"],
+  ["ich", "mich", "mir"], ["du", "dich", "dir"], ["er", "ihn", "ihm"], ["wir", "uns"], ["sie", "ihr", "ihnen"],
+  ["in", "im", "ins"], ["an", "am", "ans"], ["zu", "zum", "zur"], ["bei", "beim"], ["von", "vom"], ["weil", "denn", "dass"], ["wenn", "als", "ob"]];
+function wordVariants(w) {
+  const lw = w.toLowerCase(), cap = w[0] !== w[0].toLowerCase(), fix = v => cap ? v[0].toUpperCase() + v.slice(1) : v;
+  const out = new Set();
+  DFAM.forEach(f => { if (f.includes(lw)) f.forEach(v => v !== lw && out.add(fix(v))); });
+  if (!out.size && !cap && /^[a-zäöüß]{4,}$/.test(lw)) {
+    const pm = lw.match(/^(ab|an|auf|aus|ein|mit|nach|vor|weg|zu|zurück)?ge([a-zäöüß]{3,})$/);
+    if (pm && /(t|en)$/.test(lw)) {
+      // participle: ge…t / ge…en confusions, and the ge- in the wrong place
+      out.add(lw.endsWith("t") ? lw.slice(0, -1) + "en" : lw.slice(0, -2) + "t");
+      out.add(pm[1] ? "ge" + pm[1] + pm[2] : pm[2]);
+    } else if (/(er|es|em)$/.test(lw)) {
+      // adjective endings
+      const st = lw.slice(0, -2); ["e", "en", "er", "es", "em"].forEach(e => out.add(st + e));
+    } else {
+      // verb endings: ich -e, du -st, er -t, wir -en (with -e- after d/t/consonant+n)
+      const m = lw.match(/^(.+?)(est|et|en|st|e|t|n)$/);
+      if (m && m[1].length >= 2) {
+        const st = m[1], e = /([dt]|[^aeiouäöülr][nm])$/.test(st);
+        [st + "e", st + "en", st + (e ? "et" : "t"), st + (e ? "est" : /[sßzx]$/.test(st) ? "t" : "st")].forEach(v => out.add(v));
+      }
+    }
+  }
+  out.delete(w);
+  return [...out];
+}
+function distractors(ans) {
+  const ws = ans.split(/\s+/), cand = new Set();
+  if (ws.length > 1) cand.add(ws.slice().reverse().join(" "));
+  ws.forEach((w, i) => wordVariants(w.replace(/[.,!?;:]/g, "")).forEach(v => { const c = ws.slice(); c[i] = v; cand.add(c.join(" ")); }));
+  cand.delete(ans);
+  return shuffle([...cand].filter(c => dNorm(c) !== dNorm(ans))).slice(0, 2);
+}
+function drillTypes(x) {
+  const g = gapsOf(x.de), t = [];
+  if (g.length) t.push("gap");
+  if (g.length && distractors(g[0]).length >= 2) t.push("mc");
+  if (plain(x.de).split(/\s+/).length >= 3) t.push("sb");
+  t.push("uf");
+  return t;
+}
+function drillPool(src, aid) {
+  atomsReady();
+  const out = [];
+  DB.atoms.forEach(a => {
+    if (aid && a.id !== aid) return;
+    a.sents.forEach((x, si) => {
+      if (x.pend || !plain(x.de).trim()) return;
+      if (aid) { out.push({ a, si }); return; }
+      if (src === "due" && !dueSents(a).includes(si)) return;
+      if (src === "weak" && !(isLive(x) && x.box <= 2)) return;
+      if (src === "all" && x.box >= 6) return;
+      out.push({ a, si });
+    });
+  });
+  return out;
+}
+let DP = { src: "weak", n: "20" };
+function drillHub() {
+  recStop(); atomsReady();
+  const chip = (k, v, l) => `<button class="chip" data-k="${k}" data-v="${v}" aria-pressed="${DP[k] === v}">${esc(l)}</button>`;
+  const cnt = s => drillPool(s).length;
+  const pool = drillPool(DP.src), n = DP.n === "all" ? pool.length : Math.min(pool.length, +DP.n);
+  const body = `<p class="muted" style="margin-top:4px">${L("Deine eigenen Sätze in allen Übungsarten: Lücke tippen, Auswahl, Satzbau und Umformen. Freies Üben: deine Boxen ändern sich nicht.", "Your own sentences in every drill type: type the gap, multiple choice, word order and transform. Free practice: your boxes don't change.")}</p>
+    <div class="h2">${L("Welche Sätze", "Which sentences")}</div>
+    <div class="chips">${chip("src", "weak", L(`Box 1–2 (${cnt("weak")})`, `Box 1–2 (${cnt("weak")})`))}${chip("src", "due", L(`Heute fällig (${cnt("due")})`, `Due today (${cnt("due")})`))}${chip("src", "all", L(`Alle (${cnt("all")})`, `All (${cnt("all")})`))}</div>
+    <div class="h2">${L("Wie viele", "How many")}</div>
+    <div class="chips">${chip("n", "10", "10")}${chip("n", "20", "20")}${chip("n", "all", L("Alle", "All"))}</div>
+    <button class="btn primary" id="go" ${n ? "" : "disabled"}>${n ? L(`${n} Übungen starten`, `Start ${n} drills`) : L("Keine Sätze in dieser Auswahl", "No sentences in this selection")}</button>`;
+  shell(L("Gemischt üben", "Mixed practice"), body, { back: L("Atome", "Atoms"), backTo: "aktiv", redraw: drillHub });
+  $("#back").onclick = () => atomsHub();
+  document.querySelectorAll("[data-k]").forEach(b => b.onclick = () => { DP[b.dataset.k] = b.dataset.v; drillHub(); });
+  $("#go").onclick = () => startDrill(shuffle(pool).slice(0, n), () => drillHub());
+}
+let DR = null;
+function startDrill(items, back) {
+  if (!items.length) { toast(L("Keine Sätze zum Üben.", "No sentences to practise.")); return; }
+  let k = Math.floor(Math.random() * 4);
+  const steps = items.map(it => { const t = drillTypes(it.a.sents[it.si]); const type = t[k++ % t.length]; return { aid: it.a.id, si: it.si, type }; });
+  DR = { steps, i: 0, res: [], back, all: items };
+  drillStep();
+}
+function drillStep() {
+  recStop();
+  if (!DR) return;
+  if (DR.i >= DR.steps.length) { drillDone(); return; }
+  const st = DR.steps[DR.i], a = atomById(st.aid), x = a && a.sents[st.si];
+  if (!x) { DR.i++; drillStep(); return; }
+  const target = plain(x.de), gaps = gapsOf(x.de);
+  let task = "";
+  if (st.type === "gap") {
+    let gi = 0;
+    task = `<p class="muted small" style="margin:10px 0 0">${L("Tippe die fehlenden Wörter.", "Type the missing words.")}</p><div class="dr-sent">${esc(x.de).replace(/\[([^\]]*)\]/g, () => `<input data-gi="${gi++}" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="${L("Lücke", "Gap")} ${gi}">`)}</div>
+      <div class="uml">${["ä", "ö", "ü", "ß"].map(c => `<button type="button" data-c="${c}">${c}</button>`).join("")}</div>
+      <button class="btn primary" id="chk">${L("Prüfen", "Check")}</button>`;
+  } else if (st.type === "mc") {
+    if (!st.opts) st.opts = shuffle([gaps[0]].concat(distractors(gaps[0])));
+    let first = true;
+    task = `<p class="muted small" style="margin:10px 0 0">${L("Was gehört in die Lücke?", "What goes in the gap?")}</p><div class="dr-sent">${esc(x.de).replace(/\[([^\]]*)\]/g, (m, v) => { if (first) { first = false; return `<span class="blank">?</span>`; } return esc(v); })}</div>
+      <div class="dr-opts">${st.opts.map((o, i) => `<button data-o="${i}">${esc(o)}</button>`).join("")}</div>`;
+  } else if (st.type === "sb") {
+    if (!st.pool) { st.pool = shuffleSeeded(target.split(/\s+/), a.id + st.si + DR.i); st.ans = []; }
+    task = `<p class="muted small" style="margin:10px 0 0">${L("Tippe die Wörter in der richtigen Reihenfolge an.", "Tap the words in the right order.")}</p>
+      <div class="tokens ans dr-ans" id="ans">${st.ans.map((pi, j) => `<button class="tok" data-a="${j}">${esc(st.pool[pi])}</button>`).join("")}</div>
+      <div class="tokens dr-pool">${st.pool.map((w, pi) => `<button class="tok ${st.ans.includes(pi) ? "used" : ""}" data-p="${pi}">${esc(w)}</button>`).join("")}</div>
+      <button class="btn primary" id="chk" ${st.ans.length === st.pool.length ? "" : "disabled"}>${L("Prüfen", "Check")}</button>`;
+  } else {
+    if (!st.tr) { const list = a.tr && a.tr.length ? a.tr : DEFAULT_TR.map(z => T(z)); st.tr = list[Math.floor(Math.random() * list.length)]; }
+    task = `<div class="dr-sent" style="font-size:18px">${esc(target)}</div>
+      <div class="hint"><b>${L("Forme den Satz um:", "Rewrite the sentence:")}</b> ${esc(st.tr)}</div>
+      ${inputBox("uf", { rows: 3, draft: false, value: st.att || "" })}
+      <button class="btn primary" id="chk">${L("Fertig", "Done")}</button>`;
+  }
+  const body = `<div class="cnt muted small" style="text-align:center;font-weight:700">${DR.i + 1} ${L("von", "of")} ${DR.steps.length}</div>
+    <div class="sit"><span class="dr-type">${esc(T(DTYPES[st.type]))}</span>${x.en ? `<div class="dr-en">${esc(x.en)}</div>` : ""}</div>
+    ${task}<div id="fb"></div>`;
+  shell(L("Gemischt üben", "Mixed practice"), body, { back: L("Zurück", "Back"), backTo: "aktiv", redraw: drillStep });
+  $("#back").onclick = () => { const b = DR.back; DR = null; b(); };
+  const done = (ok, extra) => {
+    DR.res[DR.i] = { ok, type: st.type, aid: st.aid, si: st.si, att: extra && extra.att, tr: st.tr };
+    $("#fb").innerHTML = `<div class="fb ${ok === true ? "good" : ok === false ? "bad" : ""}"><b>${ok === true ? L("Richtig!", "Right!") : ok === false ? L("Nicht ganz.", "Not quite.") : L("Gespeichert.", "Saved.")}</b>
+      <div class="tgt" style="display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:6px;font-size:17px;font-weight:700"><span>${markedHtml(x.de)}</span>${TTS ? `<button class="spk" data-say="${esc(target)}" aria-label="${L("Anhören", "Play")}">${ICON.spk}</button>` : ""}</div>
+      ${st.type === "uf" ? `<p class="muted small" style="margin:6px 0 0">${L("Das ist der Originalsatz. Deine Umformung prüft Claude am Ende.", "That's the original sentence. Claude checks your transformation at the end.")}</p>` : ""}</div>
+      <button class="btn primary" id="nx">${DR.i + 1 < DR.steps.length ? L("Weiter", "Next") : L("Fertig", "Finish")}</button>`;
+    $("#nx").onclick = () => { DR.i++; drillStep(); window.scrollTo(0, 0); };
+    $("#fb").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+  if (st.type === "gap") {
+    const ins = [...document.querySelectorAll("[data-gi]")];
+    let last = ins[0];
+    ins.forEach((el, j) => { el.style.width = Math.max(70, gaps[j].length * 13 + 24) + "px"; el.addEventListener("focus", () => last = el); el.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); (ins[j + 1] || $("#chk")).focus(); } }); });
+    if (ins[0]) setTimeout(() => { try { ins[0].focus(); } catch (e) { } }, 50);
+    document.querySelectorAll(".uml [data-c]").forEach(b => b.onclick = () => { if (!last) return; const p = last.selectionStart ?? last.value.length; last.value = last.value.slice(0, p) + b.dataset.c + last.value.slice(last.selectionEnd ?? p); last.focus(); try { last.setSelectionRange(p + 1, p + 1); } catch (e) { } });
+    $("#chk").onclick = () => {
+      let all = true;
+      ins.forEach((el, j) => { const ok = dNorm(el.value) === dNorm(gaps[j]); el.classList.add(ok ? "ok" : "no"); el.readOnly = true; if (!ok) all = false; });
+      $("#chk").remove(); document.querySelector(".uml").remove(); done(all);
+    };
+  } else if (st.type === "mc") {
+    document.querySelectorAll("[data-o]").forEach(b => b.onclick = () => {
+      const pick = st.opts[+b.dataset.o], ok = pick === gaps[0];
+      document.querySelectorAll("[data-o]").forEach(o => { const v = st.opts[+o.dataset.o]; o.disabled = true; o.className = v === gaps[0] ? "ok" : o === b ? "no" : "dim"; });
+      done(ok);
+    });
+  } else if (st.type === "sb") {
+    document.querySelectorAll("[data-p]").forEach(b => b.onclick = () => { const pi = +b.dataset.p; if (st.ans.includes(pi)) return; st.ans.push(pi); drillStep(); });
+    document.querySelectorAll("[data-a]").forEach(b => b.onclick = () => { st.ans.splice(+b.dataset.a, 1); drillStep(); });
+    const c = $("#chk"); if (c) c.onclick = () => {
+      const ok = dNorm(st.ans.map(pi => st.pool[pi]).join(" ")) === dNorm(target);
+      c.remove(); document.querySelectorAll("[data-p],[data-a]").forEach(b => b.onclick = null); $("#ans").style.borderColor = ok ? "var(--good)" : "var(--bad)";
+      done(ok);
+    };
+  } else {
+    const ta = bindInput("uf", { draft: false, onInput: v => { st.att = v; } });
+    $("#chk").onclick = () => { recStop(); const v = (ta.value || "").trim(); if (!v) { toast(L("Schreib oder sag zuerst deinen Satz.", "Write or say your sentence first.")); return; } st.att = v; $("#chk").remove(); done(null, { att: v }); };
+  }
+}
+function drillDone() {
+  const s = DR, res = s.res.filter(Boolean);
+  const checked = res.filter(r => r.ok !== null), right = checked.filter(r => r.ok).length;
+  const ufs = res.filter(r => r.type === "uf" && r.att);
+  const wrong = res.filter(r => r.ok === false).map(r => ({ a: atomById(r.aid), si: r.si })).filter(r => r.a);
+  const byType = Object.keys(DTYPES).filter(t => t !== "uf").map(t => { const rs = checked.filter(r => r.type === t); return rs.length ? `<div><b>${rs.filter(r => r.ok).length}/${rs.length}</b><span>${esc(T(DTYPES[t]))}</span></div>` : ""; }).join("");
+  const body = `<div class="result"><div class="pct">${right}/${checked.length}</div><div class="lbl">${L("richtig", "right")}</div></div>
+    ${byType ? `<div class="stats">${byType}</div>` : ""}
+    ${ufs.length ? `<div class="cb"><h3>${L(`${ufs.length} Umformungen prüfen`, `Check ${ufs.length} transformations`)}</h3><div class="muted small">${L("Kopiere sie und füge sie in einen Chat mit Claude ein.", "Copy them and paste them into a chat with Claude.")}</div><button class="btn petrol" id="ufCopy">${L("Anfrage kopieren", "Copy the request")}</button></div>` : ""}
+    ${wrong.length ? `<button class="btn primary" id="again">${L(`Fehler nochmal (${wrong.length})`, `Mistakes again (${wrong.length})`)}</button>` : ""}
+    <button class="btn ${wrong.length ? "ghost" : "primary"}" id="more">${L("Neue Runde", "New round")}</button>
+    <button class="btn ghost" id="hub" style="margin-top:8px">${L("Zu den Atomen", "Back to atoms")}</button>`;
+  DR = null;
+  shell(L("Geschafft", "Done"), body, { back: L("Atome", "Atoms"), backTo: "aktiv" });
+  $("#back").onclick = () => atomsHub();
+  const uc = $("#ufCopy"); if (uc) uc.onclick = () => {
+    const P = ["Ich übe Umformungen meiner eigenen deutschen Sätze (Ziel B1). Bitte prüf jede Umformung: Ist sie richtig? Wenn nicht, schreib die richtige Version. Erklär die Fehler kurz auf Englisch.", ""];
+    ufs.forEach((r, i) => { const a = atomById(r.aid); P.push(`${i + 1}. Original: ${plain(a.sents[r.si].de)}`, `   Aufgabe: ${r.tr}`, `   Mein Satz: ${r.att}`, ""); });
+    const p = P.join("\n"); if (!shareText(p)) copyText(p, ok => toast(ok ? L("Kopiert. Jetzt bei Claude einfügen.", "Copied. Now paste it to Claude.") : L("Kopieren ging nicht", "Couldn't copy")));
+  };
+  const ag = $("#again"); if (ag) ag.onclick = () => startDrill(wrong, s.back);
+  $("#more").onclick = () => startDrill(shuffle(s.all), s.back);
+  $("#hub").onclick = () => atomsHub();
 }
 
 /* first load: migrate and let waiting sentences in */
