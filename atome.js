@@ -246,6 +246,7 @@ function claudePrompt(ctx) {
   P.push("- (3 kurze Aufgaben zum Umformen für spätere Wiederholungen, z. B. „im Perfekt“ oder „aus Sicht von Anna“)");
   P.push("B1-VERSION:");
   P.push("(derselbe Inhalt eine Stufe besser, natürlich und auf B1-Niveau)");
+  satzmusterPromptLines(P);
   P.push("TITEL:");
   P.push("(ein kurzer deutscher Titel für den Text, 2–4 Wörter)");
   return P.join("\n");
@@ -262,7 +263,7 @@ function parseNums(t) {
 }
 function parseClaude(raw) {
   const s = String(raw || "").replace(/\r/g, "").replace(/\*\*|__/g, "").split("\n").filter(l => !/^\s*```/.test(l)).join("\n");
-  const re = /^[ \t>#]*(KORREKTUR|SÄTZE|SAETZE|ENGLISCH|FEHLERMUSTER|MUSTER|UMFORMEN|B1[- ]VERSION|TITEL)\b[ \t]*:?[ \t]*/gim;
+  const re = /^[ \t>#]*(KORREKTUR|SÄTZE|SAETZE|ENGLISCH|FEHLERMUSTER|SATZMUSTER|MUSTER|UMFORMEN|B1[- ]VERSION|TITEL)\b[ \t]*:?[ \t]*/gim;
   const marks = []; let m;
   while ((m = re.exec(s))) marks.push({ k: m[1].toUpperCase().replace("SAETZE", "SÄTZE").replace("B1 VERSION", "B1-VERSION"), start: m.index, body: m.index + m[0].length });
   // the last KORREKTUR wins (a quoted prompt may contain one too); without one, the first SÄTZE
@@ -300,7 +301,7 @@ function parseClaude(raw) {
   }).filter(x => x.name);
   const up = out["B1-VERSION"] && !isPh(out["B1-VERSION"]) ? lines(out["B1-VERSION"]).join("\n") : "";
   const title = out.TITEL && !isPh(out.TITEL) ? lines(out.TITEL)[0].replace(/^[„“"]|[“”"]$/g, "").trim() : "";
-  return { sents, fp, tr: list(out.UMFORMEN), up, title, muster: list(out.MUSTER), corr: korr ? plain(takeGuess(korr).t) : sents.map(x => plain(x.de)).join(" ") };
+  return { sents, fp, tr: list(out.UMFORMEN), up, title, muster: list(out.MUSTER), pm: out.SATZMUSTER ? smParse(out.SATZMUSTER) : [], corr: korr ? plain(takeGuess(korr).t) : sents.map(x => plain(x.de)).join(" ") };
 }
 
 /* ---------- the atom editor (after a correction, and for "Bearbeiten") ---------- */
@@ -310,7 +311,7 @@ function stateFromParse(p, title) {
   const names = p.fp.map(x => x.name);
   p.fp.forEach(x => { if (x.en) PAT_EN[pNorm(x.name)] = x.en; });
   return {
-    t: title || p.title || autoTitle(p.sents), tr: p.tr.slice(), up: p.up || "", pats: names.slice(),
+    t: title || p.title || autoTitle(p.sents), pm: p.pm || [], tr: p.tr.slice(), up: p.up || "", pats: names.slice(),
     sents: p.sents.map((s, i) => ({ de: s.de, en: s.en, kw: s.kw, g: !!s.g, pn: p.fp.filter(f => !f.nums.length || f.nums.includes(i + 1)).map(f => f.name) }))
   };
 }
@@ -387,7 +388,7 @@ function newAtomFrom(st, ctx) {
   const sents = buildSents(st);
   st.pats.forEach(n => patFind(n, false, PAT_EN[pNorm(n)]));
   const a = { id: "a" + Date.now().toString(36), t: st.t.trim() || ctx.title || L("Mein Text", "My text"), k: ctx.kindKey || "frei", task: ctx.task || "", cue: ctx.cue || "", orig: ctx.text || "",
-    corr: sents.map(s => plain(s.de)).join(" "), sents, tr: st.tr, up: st.up, box: 0, due: "9999-12-31", made: today(), hist: [], ti: 0, done: false, v: 3 };
+    corr: sents.map(s => plain(s.de)).join(" "), sents, tr: st.tr, up: st.up, pm: smStamp(st.pm || []), box: 0, due: "9999-12-31", made: today(), hist: [], ti: 0, done: false, v: 3 };
   DB.atoms.push(a); admitWaiting(); syncAtom(a); save();
   return a;
 }
@@ -515,6 +516,7 @@ function atomsHub() {
     <p class="muted small" style="margin:0 2px 10px">${L(`Höchstens ${BOX_CAP} Sätze pro Box.`, `At most ${BOX_CAP} sentences per box.`)}${waitN ? " " + L(`${waitN} neue Sätze warten auf Platz in Box 1.`, `${waitN} new sentences are waiting for room in box 1.`) : ""}</p>
     <button class="hero" id="rev" ${dueN ? "" : "disabled"}><span class="ic">${dueN}</span><span><span class="tt">${L("Wiederholen", "Review")}</span><span class="ss">${dueN ? L(`${dueN} Sätze aus ${due.length} Atomen.`, `${dueN} sentences from ${due.length} atoms.`) : L("Heute ist nichts fällig.", "Nothing is due today.")}</span></span></button>
     <button class="hero alt" id="drill"><span class="ic">✦</span><span><span class="tt">${L("Gemischt üben", "Mixed practice")}</span><span class="ss">${L("Lücke, Auswahl, Satzbau, Umformen mit deinen Sätzen", "Gap, choice, word order and transform with your sentences")}</span></span></button>
+    <button class="hero ghosty" id="smHub"><span class="ic">⇄</span><span><span class="tt">${L("Satzmuster", "Pattern drills")}</span><span class="ss">${smCount() ? L(`${smCount()} Muster: ein Teil wechselt, du sagst den ganzen Satz`, `${smCount()} patterns: one part changes, you say the whole sentence`) : L("Ein Teil wechselt, du sagst den ganzen Satz", "One part changes, you say the whole sentence")}</span></span></button>
     ${weak ? `<button class="hero alt" id="weak"><span class="ic">!</span><span><span class="tt">${L("Schwächstes Muster üben", "Practise your weakest pattern")}</span><span class="ss">${esc(weak.label)} · ${Math.round(weak.score * 100)} %</span></span></button>` : ""}
     <div class="seg" id="mode"><button data-m="satz" aria-pressed="${DB.atomMode === "satz"}">${L("Satz für Satz", "Sentence by sentence")}</button><button data-m="text" aria-pressed="${DB.atomMode === "text"}">${L("Ganzer Text", "Whole text")}</button></div>
     <div class="menu" style="margin-top:12px">
@@ -533,6 +535,7 @@ function atomsHub() {
   shell(L("Atome", "Atoms"), body, { back: L("Aktiv", "Active"), backTo: "aktiv", redraw: atomsHub });
   $("#rev").onclick = () => { if (dueN) startAtomReview(due.map(a => a.id)); };
   $("#drill").onclick = () => drillHub();
+  $("#smHub").onclick = () => smHub();
   const w = $("#weak"); if (w) w.onclick = () => startPatPractice(weak.id);
   document.querySelectorAll("#mode button").forEach(b => b.onclick = () => { DB.atomMode = b.dataset.m; save(); document.querySelectorAll("#mode button").forEach(x => x.setAttribute("aria-pressed", x === b)); });
   $("#mPats").onclick = () => patsHub();
@@ -562,6 +565,7 @@ function atomDetail(id, editing) {
     ${hist ? `<p class="muted small">${hist}</p>` : ""}
     ${a.sents.some(x => isLive(x) && !x.pend) ? `<button class="btn primary" id="now">${L("Jetzt wiederholen", "Review now")}</button>` : ""}
     <button class="btn petrol" id="drA">${L("Dieses Atom gemischt üben", "Mixed practice for this atom")}</button>
+    <button class="btn ghost" id="smA">${(a.pm || []).length ? L(`Satzmuster üben (${a.pm.length})`, `Pattern drills (${a.pm.length})`) : L("Satzmuster von Claude holen", "Get pattern drills from Claude")}</button>
     <div class="row2"><button class="btn ghost" id="edit">${L("Bearbeiten", "Edit")}</button><button class="btn ghost" id="del">${L("Löschen", "Delete")}</button></div>`;
   shell(a.t, body, { back: L("Atome", "Atoms"), backTo: "aktiv", redraw: () => atomDetail(id) });
   $("#back").onclick = () => atomsHub();
@@ -569,6 +573,7 @@ function atomDetail(id, editing) {
 
   const nw = $("#now"); if (nw) nw.onclick = () => startAtomReview([id], true);
   $("#drA").onclick = () => drillHub(id);
+  $("#smA").onclick = () => (a.pm || []).length ? smHub(id) : smFetch([id], () => atomDetail(id));
   $("#edit").onclick = () => atomDetail(id, true);
   let armed = false;
   $("#del").onclick = e => { if (!armed) { armed = true; e.target.textContent = L("Nochmal tippen zum Löschen", "Tap again to delete"); e.target.classList.add("bad"); return; } DB.atoms = DB.atoms.filter(x => x.id !== id); save(); toast(L("Gelöscht", "Deleted")); atomsHub(); };
