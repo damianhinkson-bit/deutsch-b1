@@ -885,7 +885,7 @@ function wordVariants(w) {
   out.delete(w);
   return [...out];
 }
-function distractors(ans) {
+function drillWrong(ans) {
   const ws = ans.split(/\s+/), cand = new Set();
   if (ws.length > 1) cand.add(ws.slice().reverse().join(" "));
   ws.forEach((w, i) => wordVariants(w.replace(/[.,!?;:]/g, "")).forEach(v => { const c = ws.slice(); c[i] = v; cand.add(c.join(" ")); }));
@@ -895,7 +895,7 @@ function distractors(ans) {
 function drillTypes(x) {
   const g = gapsOf(x.de), t = [];
   if (g.length) t.push("gap");
-  if (g.length && distractors(g[0]).length >= 2) t.push("mc");
+  if (g.length && drillWrong(g[0]).length >= 2) t.push("mc");
   if (plain(x.de).split(/\s+/).length >= 3) t.push("sb");
   t.push("uf");
   return t;
@@ -971,7 +971,7 @@ function drillStep() {
       <div class="uml">${["ä", "ö", "ü", "ß"].map(c => `<button type="button" data-c="${c}">${c}</button>`).join("")}</div>
       <button class="btn primary" id="chk">${L("Prüfen", "Check")}</button>`;
   } else if (st.type === "mc") {
-    if (!st.opts) st.opts = shuffle([gaps[0]].concat(distractors(gaps[0])));
+    if (!st.opts) st.opts = shuffle([gaps[0]].concat(drillWrong(gaps[0])));
     let first = true;
     task = `<p class="muted small" style="margin:10px 0 0">${L("Was gehört in die Lücke?", "What goes in the gap?")}</p><div class="dr-sent">${esc(x.de).replace(/\[([^\]]*)\]/g, (m, v) => { if (first) { first = false; return `<span class="blank">?</span>`; } return esc(v); })}</div>
       <div class="dr-opts">${st.opts.map((o, i) => `<button data-o="${i}">${esc(o)}</button>`).join("")}</div>`;
