@@ -237,7 +237,7 @@ const SHK_ITEMS = {
   { t: "gap", q: "Ich ___ gern einen Kostenvoranschlag.", h: "haben", a: ["hätte"], en: "I'd like a cost estimate.", why: "ich hätte gern." },
   { t: "mc", q: "___ Sie mir bitte die Tür aufmachen?", o: ["Könnten", "Können", "Konnten"], en: "Could you open the door for me, please?", why: "Polite request: könnten." },
   { t: "mc", q: "Wenn ich eine eigene Firma hätte, ___ ich Wärmepumpen verkaufen.", o: ["würde", "werde", "wurde"], en: "If I had my own firm, I'd sell heat pumps.", why: "würde + infinitive." },
-  { t: "sb", s: "Es wäre gut, wenn Sie die Heizung ausschalten.", en: "It would be good if you switched the heating off.", why: "wäre." },
+  { t: "sb", s: "Es wäre gut, wenn Sie die Heizung ausschalten würden.", en: "It would be good if you switched the heating off.", why: "wäre … würden." },
   { t: "sb", s: "An Ihrer Stelle würde ich die Rohre dämmen.", en: "If I were you, I'd insulate the pipes.", why: "Advice: würde + infinitive." },
   { t: "uf", q: "Können Sie mir helfen?", task: "höflicher", a: ["Könnten Sie mir helfen?"], en: "Could you help me?", why: "können → könnten." },
   { t: "uf", q: "Ich habe mehr Zeit.", task: "Wunsch: Wenn ich doch …", a: ["Wenn ich doch mehr Zeit hätte!"], en: "If only I had more time!", why: "hätte, verb at the end." }
