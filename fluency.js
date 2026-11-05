@@ -2,7 +2,8 @@
    Uses the helpers from index.html (DB, L, say, shell …), the speech recognition from aktiv.js (recStart, SRC)
    and the atoms and rating labels from atome.js (allSents, RATE, claudeBlock). */
 
-const PINGPONG = PINGPONG_RAW.map(r => ({ id: r[1], cat: r[0], q: r[1], en: r[2], m: r[3] }));
+if (typeof SHK_PP_CAT !== "undefined") PP_CATS.beruf = SHK_PP_CAT;
+const PINGPONG = PINGPONG_RAW.concat(typeof SHK_PP !== "undefined" ? SHK_PP : []).map(r => ({ id: r[1], cat: r[0], q: r[1], en: r[2], m: r[3] }));
 
 function flDB() {
   if (!DB.fl || typeof DB.fl !== "object") DB.fl = {};
@@ -164,6 +165,8 @@ function fsItems(src) {
     const started = W.filter(w => DB.cards[w.id] && ok(w));
     let ws = started;
     if (ws.length < 60) { const have = new Set(ws.map(w => w.id)); ws = ws.concat(shuffle(LW().filter(w => ok(w) && !have.has(w.id))).slice(0, 120 - ws.length)); }
+    // Handwerker-Modus: trade sentences always in the mix, the ones you've started first
+    if (DB.shk && typeof isShk === "function") { const have = new Set(ws.map(w => w.id)); ws = ws.filter(w => !isShk(w)).concat(W.filter(w => isShk(w) && ok(w) && DB.cards[w.id]), shuffle(W.filter(w => isShk(w) && ok(w) && !have.has(w.id) && !DB.cards[w.id])).slice(0, 60)); }
     ws.forEach(w => out.push({ k: "w:" + w.id, src: "w", en: w.exEn, de: w.ex, note: full(w) }));
   }
   if ((src === "a" || src === "mix") && typeof allSents === "function") {
@@ -181,6 +184,12 @@ function fsBuild(src, n) {
   all.forEach(it => by[it.src].push(it));
   const want = { w: Math.round(n * .5), a: Math.round(n * .3) }; want.r = n - want.w - want.a;
   let pick = [];
+  if (DB.shk && typeof isShk === "function") {
+    // Handwerker-Modus: half of the word sentences come from the trade
+    const sh = by.w.filter(it => isShk(BY[+it.k.slice(2)])), ot = by.w.filter(it => !isShk(BY[+it.k.slice(2)])), hs = Math.ceil(want.w / 2);
+    pick = flOrder(sh, st, hs); pick = pick.concat(flOrder(ot, st, want.w - pick.length));
+    ["a", "r"].forEach(k => { pick = pick.concat(flOrder(by[k], st, want[k])); });
+  } else
   ["a", "r", "w"].forEach(k => { pick = pick.concat(flOrder(by[k], st, want[k])); });
   if (pick.length < n) { const have = new Set(pick.map(x => x.k)); pick = pick.concat(flOrder(all.filter(x => !have.has(x.k)), st, n - pick.length)); }
   return shuffle(pick);
@@ -292,7 +301,7 @@ function ppHub() {
   const body = `<p class="muted" style="margin-top:4px">${L("Die App stellt dir eine Frage, und du antwortest sofort, ohne Vorbereitung. Lieber einfach und flüssig als perfekt.", "The app asks you a question and you answer straight away, without preparing. Simple and fluent beats perfect.")}</p>
     <div class="stats"><div><b>${PINGPONG.length}</b><span>${L("Fragen", "questions")}</span></div><div><b>${asked}</b><span>${L("beantwortet", "answered")}</span></div><div><b>${Object.values(f.q).filter(c => c.last && c.last <= 2).length}</b><span>${L("noch schwer", "still hard")}</span></div></div>
     <div class="h2">${L("Thema", "Topic")}</div>
-    <div class="chips">${chip("cat", "all", L("Alle", "All"))}${Object.keys(PP_CATS).map(k => chip("cat", k, T(PP_CATS[k]))).join("")}</div>
+    <div class="chips">${chip("cat", "all", L("Alle", "All"))}${shkFirst(Object.keys(PP_CATS)).map(k => chip("cat", k, T(PP_CATS[k]))).join("")}</div>
     ${p.cat !== "all" ? `<p class="muted small" style="margin:0 2px">${L("Übt vor allem: ", "Mostly practises: ")}${esc(PP_CATS[p.cat][2])}</p>` : ""}
     <div class="h2">${L("Zeit zum Antworten", "Time to answer")}</div>
     <div class="chips">${chip("sec", 15, "15 s")}${chip("sec", 20, "20 s")}${chip("sec", 30, "30 s")}</div>

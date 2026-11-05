@@ -260,7 +260,7 @@ function backToHub() { go("aktiv"); }
 /* =================================================================== SPRECHEN */
 function spHub() {
   recStop();
-  const body = Object.keys(SP_CATS).map(c => `<div class="sec-h">${esc(T(SP_CATS[c]))}</div><div class="menu">${SPRECHEN.filter(t => t.cat === c).map(t => `<button class="item" data-sp="${t.id}"><span class="ic">${t.type === "dlg" ? "💬" : "🗣"}</span><span class="tx"><span class="tt">${esc(T(t.t))}</span><span class="ss">${t.type === "dlg" ? L(`Gespräch · ${t.turns.length} Antworten`, `Conversation · ${t.turns.length} replies`) : L(`Allein sprechen · ca. ${Math.round(t.sec / 60 * 2) / 2} Min.`, `Monologue · about ${Math.round(t.sec / 60 * 2) / 2} min`)}</span></span>${DB.spDone[t.id] ? `<span class="badge ok">✓</span>` : ""}</button>`).join("")}</div>`).join("")
+  const body = shkFirst(Object.keys(SP_CATS)).map(c => `<div class="sec-h">${esc(T(SP_CATS[c]))}</div><div class="menu">${SPRECHEN.filter(t => t.cat === c).map(t => `<button class="item" data-sp="${t.id}"><span class="ic">${t.type === "dlg" ? "💬" : "🗣"}</span><span class="tx"><span class="tt">${esc(T(t.t))}</span><span class="ss">${t.type === "dlg" ? L(`Gespräch · ${t.turns.length} Antworten`, `Conversation · ${t.turns.length} replies`) : L(`Allein sprechen · ca. ${Math.round(t.sec / 60 * 2) / 2} Min.`, `Monologue · about ${Math.round(t.sec / 60 * 2) / 2} min`)}</span></span>${DB.spDone[t.id] ? `<span class="badge ok">✓</span>` : ""}</button>`).join("")}</div>`).join("")
     + `<p class="muted small" style="margin-top:14px">${SRC ? L("Die Spracherkennung schickt deine Stimme an Google und braucht meistens Internet. Ohne Netz kannst du deine Antworten tippen.", "Speech recognition sends your voice to Google and usually needs the internet. Offline, you can type your answers.") : L("Spracherkennung geht nur in Chrome. Hier kannst du deine Antworten tippen.", "Speech recognition only works in Chrome. Here you can type your answers.")}</p>`;
   shell(L("Sprechen", "Speaking"), body, { back: L("Aktiv", "Active"), backTo: "aktiv", redraw: spHub });
   document.querySelectorAll("[data-sp]").forEach(b => b.onclick = () => { const t = SPRECHEN.find(x => x.id === b.dataset.sp); if (t.type === "dlg") startDialog(t); else monoTask(t); });
@@ -349,7 +349,7 @@ function monoTask(t) {
 function swHub() {
   recStop();
   const body = `<div class="menu"><button class="item" id="free"><span class="ic">✦</span><span class="tx"><span class="tt">${L("Freies Schreiben", "Free writing")}</span><span class="ss">${L("Dein Thema, deine Sätze. Wird dein nächstes Atom.", "Your topic, your sentences. Becomes your next atom.")}</span></span></button></div>`
-    + Object.keys(SW_CATS).map(c => `<div class="sec-h">${esc(T(SW_CATS[c]))}</div><div class="menu">${SCHREIBEN.filter(t => t.cat === c).map(t => `<button class="item" data-sw="${t.id}"><span class="ic">✎</span><span class="tx"><span class="tt">${esc(T(t.t))}</span><span class="ss">${L(`ca. ${t.w} Wörter`, `about ${t.w} words`)}${draftGet("sw-" + t.id) ? L(" · Entwurf gespeichert", " · draft saved") : ""}</span></span>${DB.swDone[t.id] ? `<span class="badge ok">✓</span>` : ""}</button>`).join("")}</div>`).join("");
+    + shkFirst(Object.keys(SW_CATS)).map(c => `<div class="sec-h">${esc(T(SW_CATS[c]))}</div><div class="menu">${SCHREIBEN.filter(t => t.cat === c).map(t => `<button class="item" data-sw="${t.id}"><span class="ic">✎</span><span class="tx"><span class="tt">${esc(T(t.t))}</span><span class="ss">${L(`ca. ${t.w} Wörter`, `about ${t.w} words`)}${draftGet("sw-" + t.id) ? L(" · Entwurf gespeichert", " · draft saved") : ""}</span></span>${DB.swDone[t.id] ? `<span class="badge ok">✓</span>` : ""}</button>`).join("")}</div>`).join("");
   shell(L("Schreiben", "Writing"), body, { back: L("Aktiv", "Active"), backTo: "aktiv", redraw: swHub });
   $("#free").onclick = () => freeWrite();
   document.querySelectorAll("[data-sw]").forEach(b => b.onclick = () => swTask(SCHREIBEN.find(x => x.id === b.dataset.sw)));
@@ -424,7 +424,7 @@ const DECKS = {
   r: { name: ["Redemittel", "Useful phrases"], items: REDEMITTEL, by: RBY,
        modes: { situation: ["Situation", "Situation"], karte: ["Karte", "Card"], satzbau: ["Satzbau", "Word order"], hoeren: ["Hören", "Listening"], sagen: ["Sagen", "Say it"] },
        modesFor: it => { const m = ["situation", "karte", "sagen"]; if (rmTokens(it).length >= 3) m.push("satzbau"); if (TTS) m.push("hoeren"); return m; },
-       filters: Object.assign({ all: ["Alle", "All"] }, Object.fromEntries(Object.keys(RM_CATS).map(k => [k, [RM_CATS[k][0], RM_CATS[k][1]]]))),
+       filters: Object.assign({ all: ["Alle", "All"] }, Object.fromEntries(shkFirst(Object.keys(RM_CATS)).map(k => [k, [RM_CATS[k][0], RM_CATS[k][1]]]))),
        filt: (it, f) => f === "all" || it.cat === f }
 };
 const DK_NEW = 10;
@@ -468,7 +468,7 @@ function deckList(d) {
   const lvTxt = c => !c ? L("neu", "new") : c.lv >= 4 ? L("sicher", "secure") : L("Stufe ", "Level ") + c.lv;
   let body;
   if (d === "v") body = `<div class="list">${D.items.map(v => { const c = dkSt(d, v.id); return `<div class="li"><span class="tx"><span class="d">${esc(verbLabel(v))}</span><span class="e">${esc(v.en)} · ${esc(v.ex.replace(/[\[\]]/g, ""))}</span></span><span class="lv ${c ? "l" + c.lv : ""}">${lvTxt(c)}</span></div>`; }).join("")}</div>`;
-  else body = Object.keys(RM_CATS).map(k => `<div class="sec-h">${esc(T(RM_CATS[k]))}</div><div class="list">${D.items.filter(r => r.cat === k).map(r => { const c = dkSt(d, r.id); return `<div class="li"><span class="tx"><span class="d">${esc(r.de)}</span><span class="e">${esc(r.en)}${r.note ? " · " + esc(r.note) : ""}</span></span>${TTS ? `<button class="spk" data-say="${esc(r.de.replace(/…/g, ""))}" aria-label="${L("Anhören", "Play")}">${ICON.spk}</button>` : ""}<span class="lv ${c ? "l" + c.lv : ""}">${lvTxt(c)}</span></div>`; }).join("")}</div>`).join("");
+  else body = shkFirst(Object.keys(RM_CATS)).map(k => `<div class="sec-h">${esc(T(RM_CATS[k]))}</div><div class="list">${D.items.filter(r => r.cat === k).map(r => { const c = dkSt(d, r.id); return `<div class="li"><span class="tx"><span class="d">${esc(r.de)}</span><span class="e">${esc(r.en)}${r.note ? " · " + esc(r.note) : ""}</span></span>${TTS ? `<button class="spk" data-say="${esc(r.de.replace(/…/g, ""))}" aria-label="${L("Anhören", "Play")}">${ICON.spk}</button>` : ""}<span class="lv ${c ? "l" + c.lv : ""}">${lvTxt(c)}</span></div>`; }).join("")}</div>`).join("");
   shell(T(D.name), body, { back: T(D.name), backTo: "aktiv", redraw: () => deckList(d) });
   $("#back").onclick = () => deckHub(d);
 }
