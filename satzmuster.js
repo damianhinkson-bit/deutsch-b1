@@ -150,6 +150,7 @@ function smFetchPrompt(atoms) {
   const known = patsSorted().map(p => p.name).filter(Boolean).slice(0, 25);
   const P = ["Ich übe Deutsch (Ziel: flüssig auf B1) mit Satzmustern: Ein Teil des Satzes wechselt, und ich sage den ganzen Satz neu, mit der richtigen Form. Bitte mach aus meinen eigenen, schon korrigierten Sätzen unten Satzmuster.", ""];
   if (known.length) P.push("Meine bekannten Fehlermuster: " + known.join("; "), "");
+  if (shkLine()) P.push(shkLine() + " Die Stichwörter in den Mustern sollen möglichst aus diesem Bereich kommen (z. B. die Pumpe, das Ventil, der Heizkörper).", "");
   atoms.forEach((a, i) => {
     P.push(`TEXT ${i + 1}: ${a.t}`);
     a.sents.filter(x => !x.pend && plain(x.de).trim()).forEach((x, j) => P.push(`${j + 1}. ${plain(x.de)}`));

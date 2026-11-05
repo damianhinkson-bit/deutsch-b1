@@ -233,6 +233,7 @@ function claudePrompt(ctx) {
   if (ctx.dialog) P.push("Es ist ein Gespräch. Korrigiere nur meine Sätze (Ich:).");
   if (ctx.task) P.push("Aufgabe: " + ctx.task);
   if (known.length) P.push("Meine bekannten Fehlermuster (benutze genau diese Namen, wenn eins passt): " + known.join("; "));
+  if (shkLine()) P.push(shkLine());
   P.push("", "---", ctx.text.trim(), "---", "");
   P.push("Erkläre die wichtigsten Korrekturen kurz auf Englisch. Schreib danach genau diesen Block:");
   P.push("KORREKTUR:");
@@ -411,6 +412,7 @@ function fixPrompt(a) {
     P.push("");
   } else P.push(`Ich habe meinen deutschen Text „${a.t}“ geändert.`, "");
   if (a.up || todo.length) P.push("Mein ganzer Text im Moment:", a.sents.map(x => x.pend ? `[${x.pend}]` : plain(x.de)).join(" "), "");
+  if (shkLine()) P.push(shkLine(), "");
   P.push("Antworte am Ende mit genau diesen Blöcken:");
   if (todo.length) P.push("SÄTZE:", "1. (korrigierter Satz, korrigierte Stellen in [eckigen Klammern]) | (englische Bedeutung) | (2–4 Stichwörter in der Grundform)", "(ein Satz pro Zeile, gleiche Nummern und Reihenfolge wie oben)");
   P.push("B1-VERSION:", "(der ganze Text mit den neuen Sätzen, eine Stufe besser, natürlich und auf B1-Niveau)");
