@@ -1,6 +1,6 @@
-const CACHE="b1-wortschatz-v30";
+const CACHE="b1-wortschatz-v31";
 const CORE=["./","index.html","shk-data.js","aktiv-data.js","shk-aktiv.js","aktiv.js","atome.js","satzmuster.js","fluency-data.js","fluency.js","manifest.webmanifest","icon-192.png","icon-512.png",
-  "grammatik/index.html","grammatik/fonts/bricolage.woff2"];
+  "grammatik/index.html","grammatik/shk-items.js","grammatik/fonts/bricolage.woff2"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener("fetch",e=>{

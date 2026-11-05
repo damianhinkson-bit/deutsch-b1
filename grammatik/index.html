@@ -191,6 +191,7 @@ textarea.uf:focus{border-color:var(--petrol)}
 <header class="top" id="top"></header>
 <main class="wrap" id="app"></main>
 <div id="cta"></div>
+<script src="shk-items.js"></script>
 <script>
 // A1 grammar content (same item format as data.js)
 const RULES_A1 = [
@@ -2493,6 +2494,9 @@ function key(ruleId, i){ return ruleId + ":" + i; }
 const LEVELS = [["A1", RULES_A1], ["A2", RULES], ["B1", RULES_B1]];
 const ALL_RULES = [];
 LEVELS.forEach(([lv, rs]) => rs.forEach(r => { r.level = lv; ALL_RULES.push(r); }));
+// Handwerker-Modus (switched on in the B1 app): trade examples join each rule, after its own items
+const SHK_MODE = (() => { try { return !!JSON.parse(window.localStorage.getItem("b1-wortschatz-v1") || "{}").shk; } catch (e) { return false; } })();
+if (SHK_MODE && typeof SHK_ITEMS !== "undefined") ALL_RULES.forEach(r => (SHK_ITEMS[r.id] || []).forEach(it => r.items.push(Object.assign({ shk: 1 }, it))));
 function curLevel(){ const l = state.settings.level; return (l === "A1" || l === "B1") ? l : "A2"; }
 function levelRules(lv){ return LEVELS.find(x => x[0] === (lv || curLevel()))[1]; }
 function ruleById(id){ return ALL_RULES.find(r => r.id === id); }
