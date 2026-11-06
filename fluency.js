@@ -39,7 +39,10 @@ function flDB() {
   .hard:last-child{border-bottom:0}
   .hard .e{color:var(--muted);font-size:14px}
   .pp-q{display:flex;gap:10px;align-items:flex-start;justify-content:space-between}
-  .pp-q .tx{font-size:18px;font-weight:700;line-height:1.4}`;
+  .pp-q .tx{font-size:18px;font-weight:700;line-height:1.4}
+  .pp-en{margin-top:6px;font-size:15px;color:var(--muted);font-style:italic}
+  .pp-help{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .pp-help .chip{padding:6px 12px;font-size:13px}`;
   try { const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st); } catch (e) { }
 })();
 
@@ -331,7 +334,8 @@ function ppAsk() {
   const q = s.qs[s.i];
   let shown = !s.hide;
   const body = `<div class="prog"><i style="width:${100 * s.i / s.qs.length}%"></i></div>
-    <div class="log"><div class="bub p cur"><span class="who">${L("Frage", "Question")} ${s.i + 1}/${s.qs.length}</span><div class="pp-q"><span class="tx" id="qTx">${shown ? esc(q.q) : `<span class="hidden-line">${L("Tippe zum Anzeigen", "Tap to show")}</span>`}</span>${TTS ? `<button class="spk" id="qSay" aria-label="${L("Nochmal anhören", "Play again")}">${ICON.spk}</button>` : ""}</div></div></div>
+    <div class="log"><div class="bub p cur"><span class="who">${L("Frage", "Question")} ${s.i + 1}/${s.qs.length}</span><div class="pp-q"><span class="tx" id="qTx">${shown ? esc(q.q) : `<span class="hidden-line">${L("Tippe zum Anzeigen", "Tap to show")}</span>`}</span>${TTS ? `<button class="spk" id="qSay" aria-label="${L("Nochmal anhören", "Play again")}">${ICON.spk}</button>` : ""}</div>
+      ${q.en ? `<div class="pp-en" id="qEn" hidden>${esc(q.en)}</div><div class="pp-help"><button class="chip" id="qEnB">EN</button><button class="chip" id="qNv">${L("Nicht verstanden", "Didn't understand")}</button></div>` : ""}</div></div>
     <div class="tbar" id="tb"><i></i></div>
     <div class="lstat"><span class="st" id="st"></span><span class="tnum" id="tn"></span></div>
     <div class="ibox"><textarea class="tarea" id="ans" rows="4" placeholder="${esc(s.mic ? L("Deine Antwort erscheint hier. Du kannst sie auch tippen.", "Your answer appears here. You can also type it.") : L("Sag deine Antwort laut. Wenn du willst, tipp sie hier.", "Say your answer out loud. Type it here if you like."))}" spellcheck="false" autocapitalize="sentences"></textarea><div class="interim" id="int"></div></div>
@@ -358,6 +362,20 @@ function ppAsk() {
     if (TTS && say(q.q)) afterSpeech(begin); else begin();
   };
   if ($("#qSay")) $("#qSay").onclick = ask;
+  // English help: EN shows the meaning and stops the clock; "Nicht verstanden" also replays the question slowly,
+  // restarts the clock and brings the question back once more at the end of the round
+  const showEn = () => { const e = $("#qEn"); if (e) e.hidden = false; if (!shown) { shown = true; qTx.textContent = q.q; } };
+  const enB = $("#qEnB");
+  if (enB) enB.onclick = () => { showEn(); enB.disabled = true; if (LR) { LR.frozen = true; const n = $("#tn"); if (n) n.textContent = L("Uhr angehalten", "Clock paused"); } };
+  const nv = $("#qNv");
+  if (nv) nv.onclick = () => {
+    showEn(); if (enB) enB.disabled = true; nv.disabled = true;
+    if (!q.again) { s.qs.push(Object.assign({}, q, { again: true })); }
+    lrStop();
+    const st = $("#st"); if (st) { st.classList.remove("on"); st.textContent = L("Langsam: hör zu …", "Slowly: listen …"); }
+    const bar = $("#tb"); if (bar) bar.firstChild.style.width = "100%";
+    if (TTS && say(q.q, .65)) afterSpeech(begin); else begin();
+  };
   ta.addEventListener("focus", () => { if (LR) { LR.frozen = true; const n = $("#tn"); if (n) n.textContent = L("Uhr angehalten", "Clock paused"); } }); // typing: stop the clock
   $("#done").onclick = () => { if (LR && LR.end) LR.end("tap"); else ppReveal(ta.value.trim()); };
   $("#skip").onclick = () => { lrStop(); hush(); s.qs.splice(s.i, 1); ppAsk(); };
