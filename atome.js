@@ -858,7 +858,7 @@ function enFill() {
   const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
 })();
 const DTYPES = { gap: ["Lücke tippen", "Type the gap"], mc: ["Auswahl", "Multiple choice"], sb: ["Satzbau", "Word order"], uf: ["Umformen", "Transform"] };
-const dNorm = t => String(t || "").toLowerCase().replace(/ß/g, "ss").replace(/[.,!?;:"„“'()«»…–-]/g, " ").replace(/\s+/g, " ").trim();
+const dNorm = t => numNorm(String(t || "").toLowerCase().replace(/[.,!?;:"„“'()«»…–-]/g, " ").replace(/\s+/g, " ").trim()).replace(/ß/g, "ss");
 const gapsOf = de => { const out = []; String(de).replace(/\[([^\]]+)\]/g, (m, x) => { out.push(x.trim()); return m; }); return out; };
 
 /* wrong options for multiple choice: typical confusions, never the right answer */

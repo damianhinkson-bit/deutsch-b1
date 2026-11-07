@@ -396,9 +396,21 @@ function freeWrite() {
 
 /* =================================================================== ATOME: see atome.js */
 /* word-level diff (longest common subsequence), compared without case and punctuation */
+/* numbers: "10" and "zehn" count as the same word when answers are checked */
+const NUM_WORDS = (() => {
+  const u = ["null", "eins", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun", "zehn", "elf", "zwölf", "dreizehn", "vierzehn", "fünfzehn", "sechzehn", "siebzehn", "achtzehn", "neunzehn"];
+  const t = { 20: "zwanzig", 30: "dreißig", 40: "vierzig", 50: "fünfzig", 60: "sechzig", 70: "siebzig", 80: "achtzig", 90: "neunzig" };
+  const m = {};
+  for (let n = 0; n < 100; n++) m[n] = n < 20 ? u[n] : (n % 10 ? (n % 10 === 1 ? "ein" : u[n % 10]) + "und" : "") + t[n - n % 10];
+  m[100] = "hundert"; return m;
+})();
+const NUM_SET = new Map(Object.entries(NUM_WORDS).map(([n, w]) => [w, n]).concat([["einhundert", "100"]]));
+// map a single word to its digits if it is a number word; "1" stays as is (ein/eine/einen depends on the noun)
+function numKey(w) { if (/^\d+$/.test(w)) return w; const n = NUM_SET.get(w); return n && n !== "1" ? n : w; }
+function numNorm(t) { return String(t).split(" ").map(numKey).join(" "); }
 function diffHtml(mine, target) {
   const tok = s => String(s).split(/\s+/).filter(Boolean);
-  const key = w => w.toLowerCase().replace(/[.,!?;:"„“'()«»–-]/g, "").replace(/ß/g, "ss");
+  const key = w => numKey(w.toLowerCase().replace(/[.,!?;:"„“'()«»–-]/g, "").replace(/ß/g, "ss"));
   const A = tok(mine), B = tok(target), n = A.length, m = B.length;
   if (n * m > 250000) return esc(target);
   const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
