@@ -5,7 +5,7 @@
 
 const GRAMMAR_URL = "https://damianhinkson-bit.github.io/deutsch-a2/";
 const T = a => (a ? (EN() ? a[1] : a[0]) : "");
-const ATOM_INT = [0, 1, 3, 7, 16, 35];
+const ATOM_INT = [0, 1, 2, 3, 5, 7]; // days until a sentence in box 1–5 comes back (longest gap: 7 days)
 const DEFAULT_TR = [
   ["im Perfekt", "in the Perfekt"], ["aus der Sicht von „er“ oder „sie“", "from the point of view of “he” or “she”"],
   ["verneint (mit nicht oder kein)", "negated (with nicht or kein)"], ["im Präteritum", "in the Präteritum"],

@@ -177,6 +177,12 @@ function atomsReady() {
   if (!DB.pats || typeof DB.pats !== "object") DB.pats = {};
   if (DB.atomMode !== "satz" && DB.atomMode !== "text") DB.atomMode = "satz";
   let changed = false;
+  // shorter gaps (max 7 days): pull in sentences that were scheduled further out under the old 16/35-day gaps
+  if (DB.atomInt !== ATOM_INT.join()) {
+    const now = today();
+    DB.atoms.forEach(a => (a.sents || []).forEach(x => { if (x.box >= 1 && x.box <= 5 && x.due && x.due > addDays(now, ATOM_INT[x.box])) x.due = addDays(now, ATOM_INT[x.box]); }));
+    DB.atomInt = ATOM_INT.join(); changed = true;
+  }
   DB.atoms.forEach(a => {
     if (a.v >= 2 && Array.isArray(a.sents)) return;
     const ids = (a.fp || []).map(n => patFind(n)).filter(Boolean);
@@ -536,7 +542,7 @@ function atomsHub() {
     ${act.length ? `<div class="sec-h">${L("Aktive Atome", "Active atoms")}</div><div class="list">${act.map(row).join("")}</div>` : `<p class="empty">${L("Noch keine Atome. Jeder Text, den du korrigieren lässt, kann ein Atom werden.", "No atoms yet. Any text you get corrected can become an atom.")}</p>`}
     ${grad.length ? `<details class="fold"><summary>${L("Abgeschlossen", "Graduated")} (${grad.length})</summary><div class="in"><div class="list">${grad.map(row).join("")}</div></div></details>` : ""}
     <details class="fold"><summary>${L("So funktionieren Atome", "How atoms work")}</summary><div class="in small">
-      <p style="margin-top:0">${L("Ein Atom ist ein eigener, korrigierter Text. Jeder Satz hat seine eigene Box. Wiederholt wird nach 1, 3, 7, 16 und 35 Tagen.", "An atom is one of your own corrected texts. Every sentence has its own box. Reviews come after 1, 3, 7, 16 and 35 days.")}</p>
+      <p style="margin-top:0">${L("Ein Atom ist ein eigener, korrigierter Text. Jeder Satz hat seine eigene Box. Wiederholt wird nach 1, 2, 3, 5 und 7 Tagen. Länger als eine Woche wartet kein Satz.", "An atom is one of your own corrected texts. Every sentence has its own box. Reviews come after 1, 2, 3, 5 and 7 days. No sentence waits longer than a week.")}</p>
       <p>${L("Du siehst die englische Bedeutung und sagst den Satz auf Deutsch. Hängst du fest, holst du dir Hinweise: Stichwörter, dann eine Wortbank, dann einen Lückensatz, am Ende die Lösung. Die Hinweise verraten nie die Grammatik, die du übst.", "You see the English meaning and say the sentence in German. If you're stuck, take hints: key words, then a word bank, then a gap sentence, and finally the answer. Hints never give away the grammar you're practising.")}</p>
       <p>${L("Danach bewertest du jeden Satz: 1 Keine Ahnung (zurück in Box 1), 2 Schwer (eine Box tiefer), 3 Okay (bleibt), 4 Gut (eine Box höher), 5 Leicht (zwei Boxen höher). Jeder Satz kommt einzeln wieder, wenn er fällig ist.", "Then you rate each sentence: 1 No idea (back to box 1), 2 Hard (down one box), 3 OK (stays), 4 Good (up one box), 5 Easy (up two boxes). Each sentence comes back on its own when it's due.")}</p>
       <p style="margin-bottom:0">${L(`Keine Box hat mehr als ${BOX_CAP} Sätze. Ist eine Box voll, rückt ihr stärkster Satz eine Box höher. Neue Sätze warten, bis in Box 1 Platz ist. Nach Box 5 ist ein Satz fertig.`, `No box holds more than ${BOX_CAP} sentences. When a box is full, its strongest sentence moves up one box. New sentences wait until box 1 has room. After box 5 a sentence is done.`)}</p></div></details>`;
@@ -726,7 +732,7 @@ function drawCompare(st, a, k, phase) {
 /* tap a box: see which sentences are in it, when each comes back and how you last rated it */
 function boxView(b) {
   recStop();
-  const days = [null, 1, 3, 7, 16, 35][b];
+  const days = ATOM_INT[b];
   const list = allSents().filter(y => inBox(y.s, b)).sort((p, q) => String(p.s.due || "").localeCompare(String(q.s.due || "")));
   const row = y => `<button class="bx-row" data-at="${y.a.id}"><div class="de">${esc(plain(y.s.de))}</div>${y.s.en ? `<div class="en">${esc(y.s.en)}</div>` : ""}
     <div class="sub"><span>${esc(y.a.t)}</span><span>${y.s.last ? L(`zuletzt: ${y.s.last} ${T(RATE[y.s.last])}`, `last: ${y.s.last} ${T(RATE[y.s.last])}`) + " · " : ""}${y.s.pend ? L("wartet auf Claude", "waiting for Claude") : L(`wieder ${fmtDay(y.s.due || today())}`, `back ${fmtDay(y.s.due || today())}`)}</span></div></button>`;
