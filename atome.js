@@ -82,7 +82,13 @@
   .g5 button.on[data-g="5"]{background:var(--good);border-color:var(--good)}
   .g5.picked button:not(.on){opacity:.45}
   .boxes{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:4px 0 6px}
-  .boxes div{background:var(--surface);border-radius:12px;box-shadow:var(--shadow);padding:8px 4px;text-align:center}
+  .boxes div{background:var(--surface);border-radius:12px;box-shadow:var(--shadow);padding:8px 4px;text-align:center;cursor:pointer}
+  .boxes div:active{transform:scale(.96)}
+  .bx-row{padding:11px 14px;border-bottom:1px solid var(--line);display:block;width:100%;text-align:left}
+  .bx-row:last-child{border-bottom:none}
+  .bx-row .de{font-weight:700;font-size:15.5px;line-height:1.4}
+  .bx-row .en{color:var(--muted);font-size:13.5px;margin-top:2px}
+  .bx-row .sub{display:flex;justify-content:space-between;gap:8px;font-size:12px;font-weight:700;color:var(--muted);margin-top:5px}
   .boxes b{display:block;font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
   .boxes span{font-size:11px;font-weight:800;color:var(--muted)}
   .boxes .full b{color:var(--bad)}
@@ -513,7 +519,7 @@ function atomsHub() {
   const pats = patsSorted(), weak = pats.find(p => p.n && p.score < 1 && p.atoms);
   const row = a => { const dn = dueSents(a).length; return `<button class="li" data-at="${a.id}"><span class="tx"><span class="d">${esc(a.t)}</span><span class="e">${needsClaude(a) ? L("von Claude prüfen lassen · ", "check with Claude · ") : ""}${a.done ? L("abgeschlossen", "graduated") : a.box === 0 ? L(`${a.sents.length} Sätze warten auf Platz`, `${a.sents.length} sentences waiting for room`) : dn ? L(`${dn} von ${a.sents.length} Sätzen fällig`, `${dn} of ${a.sents.length} sentences due`) : L(`${a.sents.length} Sätze · nächste ${fmtDay(a.due)}`, `${a.sents.length} sentences · next ${fmtDay(a.due)}`)}</span></span>${a.done ? `<span class="badge ok">✓</span>` : dn ? `<span class="badge due">${dn}</span>` : a.box === 0 ? `<span class="badge">…</span>` : `<span class="badge">${a.box}</span>`}</button>`; };
   const dueN = due.reduce((n, a) => n + dueSents(a).length, 0), waitN = waitingCount();
-  const boxes = [1, 2, 3, 4, 5].map(b => { const n = boxCount(b); return `<div class="${n >= BOX_CAP ? "full" : ""}"><b>${n}</b><span>Box ${b}</span><i><em style="width:${Math.min(100, n / BOX_CAP * 100)}%"></em></i></div>`; }).join("");
+  const boxes = [1, 2, 3, 4, 5].map(b => { const n = boxCount(b); return `<div class="${n >= BOX_CAP ? "full" : ""}" data-box="${b}" role="button" tabindex="0"><b>${n}</b><span>Box ${b}</span><i><em style="width:${Math.min(100, n / BOX_CAP * 100)}%"></em></i></div>`; }).join("");
   const body = `<div class="boxes">${boxes}</div>
     <p class="muted small" style="margin:0 2px 10px">${L(`Höchstens ${BOX_CAP} Sätze pro Box.`, `At most ${BOX_CAP} sentences per box.`)}${waitN ? " " + L(`${waitN} neue Sätze warten auf Platz in Box 1.`, `${waitN} new sentences are waiting for room in box 1.`) : ""}</p>
     <button class="hero" id="rev" ${dueN ? "" : "disabled"}><span class="ic">${dueN}</span><span><span class="tt">${L("Wiederholen", "Review")}</span><span class="ss">${dueN ? L(`${dueN} Sätze aus ${due.length} Atomen.`, `${dueN} sentences from ${due.length} atoms.`) : L("Heute ist nichts fällig.", "Nothing is due today.")}</span></span></button>
@@ -538,6 +544,7 @@ function atomsHub() {
   $("#rev").onclick = () => { if (dueN) startAtomReview(due.map(a => a.id)); };
   $("#drill").onclick = () => drillHub();
   $("#smHub").onclick = () => smHub();
+  document.querySelectorAll(".boxes [data-box]").forEach(el => el.onclick = () => boxView(+el.dataset.box));
   const w = $("#weak"); if (w) w.onclick = () => startPatPractice(weak.id);
   document.querySelectorAll("#mode button").forEach(b => b.onclick = () => { DB.atomMode = b.dataset.m; save(); document.querySelectorAll("#mode button").forEach(x => x.setAttribute("aria-pressed", x === b)); });
   $("#mPats").onclick = () => patsHub();
@@ -716,6 +723,20 @@ function drawCompare(st, a, k, phase) {
     reviewStep(); window.scrollTo(0, 0);
   };
 }
+/* tap a box: see which sentences are in it, when each comes back and how you last rated it */
+function boxView(b) {
+  recStop();
+  const days = [null, 1, 3, 7, 16, 35][b];
+  const list = allSents().filter(y => inBox(y.s, b)).sort((p, q) => String(p.s.due || "").localeCompare(String(q.s.due || "")));
+  const row = y => `<button class="bx-row" data-at="${y.a.id}"><div class="de">${esc(plain(y.s.de))}</div>${y.s.en ? `<div class="en">${esc(y.s.en)}</div>` : ""}
+    <div class="sub"><span>${esc(y.a.t)}</span><span>${y.s.last ? L(`zuletzt: ${y.s.last} ${T(RATE[y.s.last])}`, `last: ${y.s.last} ${T(RATE[y.s.last])}`) + " · " : ""}${y.s.pend ? L("wartet auf Claude", "waiting for Claude") : L(`wieder ${fmtDay(y.s.due || today())}`, `back ${fmtDay(y.s.due || today())}`)}</span></div></button>`;
+  const body = `<p class="muted" style="margin-top:4px">${L(`Sätze in Box ${b} kommen ${days} ${days === 1 ? "Tag" : "Tage"} nach der letzten Wiederholung wieder.`, `Sentences in box ${b} come back ${days} ${days === 1 ? "day" : "days"} after their last review.`)} ${b === 1 ? L("Hier landen neue und vergessene Sätze.", "New and forgotten sentences land here.") : b === 5 ? L("Noch eine gute Wiederholung, dann ist der Satz fertig.", "One more good review and the sentence is done.") : ""}</p>
+    ${list.length ? `<div class="list">${list.map(row).join("")}</div>` : `<p class="empty">${L("Diese Box ist leer.", "This box is empty.")}</p>`}`;
+  shell(L(`Box ${b} (${list.length})`, `Box ${b} (${list.length})`), body, { back: L("Atome", "Atoms"), backTo: "aktiv", redraw: () => boxView(b) });
+  $("#back").onclick = atomsHub;
+  document.querySelectorAll(".bx-row").forEach(el => el.onclick = () => atomDetail(el.dataset.at));
+}
+
 function gradeRowHtml(a, si) {
   const s = a.sents[si], r = R.res[rk(a.id, si)] || {};
   return `<div class="gr" id="gr-${si}"><div class="tgt"><span>${markedHtml(s.de)}</span>${TTS ? `<button class="spk" data-say="${esc(plain(s.de))}" aria-label="${L("Anhören", "Play")}">${ICON.spk}</button>` : ""}</div>
