@@ -80,6 +80,9 @@
   .g5 button.on[data-g="3"]{background:var(--amber);border-color:var(--amber)} .g5 button.on[data-g="3"] b,.g5 button.on[data-g="3"] span{color:var(--amber-ink)}
   .g5 button.on[data-g="4"]{background:var(--petrol-soft);border-color:var(--petrol-soft)}
   .g5 button.on[data-g="5"]{background:var(--good);border-color:var(--good)}
+  .g5.g3{grid-template-columns:repeat(3,1fr)}
+  .g5.g3 button.on[data-g="2"]{background:var(--amber);border-color:var(--amber)} .g5.g3 button.on[data-g="2"] b,.g5.g3 button.on[data-g="2"] span{color:var(--amber-ink)}
+  .g5.g3 button.on[data-g="3"]{background:var(--good);border-color:var(--good)} .g5.g3 button.on[data-g="3"] b,.g5.g3 button.on[data-g="3"] span{color:#fff}
   .g5.picked button:not(.on){opacity:.45}
   .boxes{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:4px 0 6px}
   .boxes div{background:var(--surface);border-radius:12px;box-shadow:var(--shadow);padding:8px 4px;text-align:center;cursor:pointer}
@@ -133,33 +136,60 @@ function gapHtml(de) {
 }
 
 /* ---------- boxes: every sentence has its own box and due date; no box holds more than BOX_CAP ---------- */
-const BOX_CAP = 25;
+const BOX_CAP = 13;
+/* RATE: 1–5 labels, still used by Sag's schnell (fluency.js). ARATE: the 3 atom ratings */
 const RATE = [null, ["Keine Ahnung", "No idea"], ["Schwer", "Hard"], ["Okay", "OK"], ["Gut", "Good"], ["Leicht", "Easy"]];
+const ARATE = [null, ["Nochmal", "Again"], ["Okay", "OK"], ["Leicht", "Easy"]];
 function allSents() { const out = []; DB.atoms.forEach(a => a.sents.forEach((x, si) => out.push({ a, s: x, si }))); return out; }
-function inBox(x, b) { return !x.wait && x.box === b; }
+/* paused sentences keep their box number but don't sit in the box: they free their space */
+function inBox(x, b) { return !x.wait && !x.paused && x.box === b; }
 function boxCount(b, except) { let n = 0; DB.atoms.forEach(a => a.sents.forEach(x => { if (x !== except && inBox(x, b)) n++; })); return n; }
-function waitingCount() { let n = 0; DB.atoms.forEach(a => a.sents.forEach(x => { if (x.wait) n++; })); return n; }
-/* put a sentence into box b; if b is full, its strongest sentence (best last rating) moves up one box to make room */
+function waitingCount() { let n = 0; DB.atoms.forEach(a => a.sents.forEach(x => { if (x.wait && !x.paused) n++; })); return n; }
+function pausedCount() { return DB.atoms.filter(a => a.paused).length; }
+/* put a sentence into box b; if b is full, its strongest sentence (best last rating; on a tie, the one waiting longest) moves up one box to make room */
 function place(x, b, depth) {
-  x.wait = false;
+  x.wait = false; delete x.wb;
   if (b > 5) { x.box = 6; x.due = ""; return; }
   if (boxCount(b, x) >= BOX_CAP && (depth || 0) < 8) {
-    const cand = allSents().filter(y => y.s !== x && inBox(y.s, b)).sort((p, q) => (q.s.last || 0) - (p.s.last || 0) || String(q.s.due || "").localeCompare(String(p.s.due || "")));
+    const cand = allSents().filter(y => y.s !== x && inBox(y.s, b)).sort((p, q) => (q.s.last || 0) - (p.s.last || 0) || String(p.s.due || "").localeCompare(String(q.s.due || "")));
     if (cand.length) place(cand[0].s, b + 1, (depth || 0) + 1);
   }
   x.box = b; x.due = addDays(today(), ATOM_INT[b]);
 }
-/* sentences of new atoms wait until box 1 has room */
+/* waiting sentences go in when their box has room: new ones wait for box 1, resumed ones (x.wb) for their old box */
 function admitWaiting() {
-  let room = BOX_CAP - boxCount(1), changed = false;
-  if (room <= 0) return false;
-  const wait = DB.atoms.slice().sort((p, q) => String(p.made || "").localeCompare(String(q.made || ""))).flatMap(a => a.sents.filter(x => x.wait).map(x => ({ a, x })));
-  for (const w of wait) { if (room <= 0) break; w.x.wait = false; w.x.box = 1; w.x.due = w.a.made === today() ? addDays(today(), 1) : today(); room--; changed = true; }
+  const room = [0, 1, 2, 3, 4, 5].map(b => b ? BOX_CAP - boxCount(b) : 0);
+  let changed = false;
+  const wait = DB.atoms.filter(a => !a.paused).sort((p, q) => String(p.made || "").localeCompare(String(q.made || ""))).flatMap(a => a.sents.filter(x => x.wait && !x.paused).map(x => ({ a, x })));
+  for (const w of wait) {
+    const b = Math.max(1, Math.min(5, w.x.wb || 1)); if (room[b] <= 0) continue;
+    w.x.wait = false; w.x.box = b;
+    w.x.due = w.x.wb ? (w.x.due && w.x.due > today() ? w.x.due : today()) : w.a.made === today() ? addDays(today(), 1) : today();
+    delete w.x.wb; room[b]--; changed = true;
+  }
   return changed;
 }
-function isLive(x) { return !x.wait && x.box >= 1 && x.box <= 5; }
+/* pause a whole atom: its sentences leave their boxes, so waiting sentences can take the space */
+function pauseAtom(a) {
+  a.paused = true;
+  a.sents.forEach(x => { if (x.box >= 1 && x.box <= 5 || x.wait) x.paused = true; });
+  admitWaiting(); DB.atoms.forEach(syncAtom); save();
+}
+/* resume: each sentence goes back to its old box if there's room, otherwise it waits for room in that box */
+function resumeAtom(a) {
+  delete a.paused;
+  a.sents.forEach(x => {
+    if (!x.paused) return; delete x.paused;
+    if (x.wait) return;
+    if (boxCount(x.box, x) >= BOX_CAP) { x.wb = x.box; x.wait = true; x.box = 0; }
+    else if (!x.due || x.due < today()) x.due = today();
+  });
+  admitWaiting(); DB.atoms.forEach(syncAtom); save();
+}
+function isLive(x) { return !x.wait && !x.paused && x.box >= 1 && x.box <= 5; }
 function syncAtom(a) {
   const live = a.sents.filter(isLive), waiting = a.sents.some(x => x.wait);
+  if (a.paused) { a.done = false; a.box = -1; a.due = "9999-12-31"; return; }
   a.done = !live.length && !waiting && a.sents.length > 0 && a.sents.every(x => x.box >= 6);
   a.box = live.length ? Math.min(...live.map(x => x.box)) : waiting ? 0 : 5;
   const dues = live.filter(x => !x.pend).map(x => x.due).filter(Boolean).sort();
@@ -203,6 +233,22 @@ function atomsReady() {
     b1.slice(0, Math.max(0, b1.length - BOX_CAP)).forEach(y => { y.s.wait = true; y.s.box = 0; y.s.due = ""; });
     for (let b = 2; b <= 5; b++) { let guard = 200; while (boxCount(b) > BOX_CAP && guard--) { const c = allSents().filter(y => inBox(y.s, b)).sort((p, q) => String(q.s.due).localeCompare(String(p.s.due)))[0]; place(c.s, b + 1); } }
     changed = true;
+  }
+  // 3 ratings instead of 5: old 1-2 -> 1 Again, 3 -> 2 OK, 4-5 -> 3 Easy
+  if (DB.atomRate !== 3) {
+    DB.atoms.forEach(a => (a.sents || []).forEach(x => { if (x.last) x.last = x.last <= 2 ? 1 : x.last === 3 ? 2 : 3; }));
+    DB.atomRate = 3; changed = true;
+  }
+  // smaller boxes (BOX_CAP): when a box is too full, its strongest sentences move up one box
+  if (DB.atomCap !== BOX_CAP) {
+    for (let b = 1; b <= 5; b++) {
+      let guard = 500;
+      while (boxCount(b) > BOX_CAP && guard--) {
+        const c = allSents().filter(y => inBox(y.s, b)).sort((p, q) => (q.s.last || 0) - (p.s.last || 0) || String(q.s.due || "").localeCompare(String(p.s.due || "")))[0];
+        place(c.s, b + 1, 8);
+      }
+    }
+    DB.atomCap = BOX_CAP; changed = true;
   }
   if (admitWaiting()) changed = true;
   DB.atoms.forEach(syncAtom);
@@ -334,7 +380,7 @@ function autoTitle(sents) {
 }
 function stateFromAtom(a) {
   const pats = atomPats(a).map(patName);
-  return { t: a.t, tr: (a.tr || []).slice(), up: a.up || "", pats, sents: a.sents.map(s => ({ de: s.de, en: s.en, kw: s.kw, g: false, pend: s.pend || "", pn: s.fp.map(patName).filter(Boolean), box: s.box, due: s.due, last: s.last, wait: s.wait })) };
+  return { t: a.t, tr: (a.tr || []).slice(), up: a.up || "", pats, sents: a.sents.map(s => ({ de: s.de, en: s.en, kw: s.kw, g: false, pend: s.pend || "", pn: s.fp.map(patName).filter(Boolean), box: s.box, due: s.due, last: s.last, wait: s.wait, paused: s.paused, wb: s.wb })) };
 }
 
 function atomEditor(host, st, opt) {
@@ -388,10 +434,12 @@ function buildSents(st, oldSents) {
     const x = {
       de: stripGuess(s.de), en: (s.en || "").trim(), kw: (s.kw || "").trim(),
       fp: [...new Set(s.pn.filter(n => st.pats.some(p => pNorm(p) === pNorm(n))).map(n => patFind(n, false, PAT_EN[pNorm(n)])))].filter(Boolean),
-      box: o ? o.box : 0, due: o ? o.due || "" : "", last: o ? o.last || 0 : 0, wait: o ? !!o.wait : true,
+      box: o ? o.box : 0, due: o ? o.due || "" : "", last: o ? o.last || 0 : 0, wait: o ? !!o.wait : true, paused: o ? !!o.paused : false,
       pend: (s.pend || "").trim()
     };
     if (!x.pend) delete x.pend;
+    if (!x.paused) delete x.paused;
+    if (o && o.wb) x.wb = o.wb;
     if (s.o != null && !x.pend && plain(x.de) !== s.o) x.chk = true;
     return x;
   });
@@ -467,7 +515,7 @@ function fixBlock(host, a, after, opt) {
     const whole = r.sents.length === a.sents.length;
     if (todo.length && !whole) { toast(L(`Ich brauche genau ${a.sents.length} Sätze. Bitte die ganze Antwort einfügen.`, `I need exactly ${a.sents.length} sentences. Please paste the whole reply.`)); return; }
     if (!todo.length && !r.up && !r.hasFp && !r.pm.length) { toast(L("Ich finde die Blöcke nicht. Bitte die ganze Antwort einfügen.", "I can't find the blocks. Please paste the whole reply.")); return; }
-    todo.forEach(i => { const s = a.sents[i], x = r.sents[i]; const changed = plain(x.de) !== plain(s.de); s.de = x.de; s.en = x.en || s.en; s.kw = x.kw || s.kw; delete s.pend; delete s.chk; if (changed && isLive(s)) { place(s, 1); s.last = 0; } });
+    todo.forEach(i => { const s = a.sents[i], x = r.sents[i]; const changed = plain(x.de) !== plain(s.de); s.de = x.de; s.en = x.en || s.en; s.kw = x.kw || s.kw; delete s.pend; delete s.chk; if (changed && isLive(s)) { place(s, 1); s.last = 0; } else if (changed && s.paused && s.box >= 1 && s.box <= 5) { s.box = 1; s.last = 0; } });
     if (r.hasFp) a.sents.forEach((s, i) => { s.fp = [...new Set(r.fp.filter(f => !f.nums.length || f.nums.includes(i + 1)).map(f => patFind(f.name, false, f.en)))].filter(Boolean); });
     if (r.tr.length) a.tr = r.tr.slice();
     if (r.pm.length) a.pm = smStamp(r.pm);
@@ -542,11 +590,11 @@ function atomsHub() {
   recStop(); atomsReady();
   const due = atomsDue(), act = DB.atoms.filter(a => !a.done).sort((a, b) => a.due < b.due ? -1 : 1), grad = DB.atoms.filter(a => a.done);
   const pats = patsSorted(), weak = pats.find(p => p.n && p.score < 1 && p.atoms);
-  const row = a => { const dn = dueSents(a).length; return `<button class="li" data-at="${a.id}"><span class="tx"><span class="d">${esc(a.t)}</span><span class="e">${needsClaude(a) ? L("von Claude prüfen lassen · ", "check with Claude · ") : ""}${a.done ? L("abgeschlossen", "graduated") : a.box === 0 ? L(`${a.sents.length} Sätze warten auf Platz`, `${a.sents.length} sentences waiting for room`) : dn ? L(`${dn} von ${a.sents.length} Sätzen fällig`, `${dn} of ${a.sents.length} sentences due`) : L(`${a.sents.length} Sätze · nächste ${fmtDay(a.due)}`, `${a.sents.length} sentences · next ${fmtDay(a.due)}`)}</span></span>${a.done ? `<span class="badge ok">✓</span>` : dn ? `<span class="badge due">${dn}</span>` : a.box === 0 ? `<span class="badge">…</span>` : `<span class="badge">${a.box}</span>`}</button>`; };
+  const row = a => { const dn = dueSents(a).length; return `<button class="li" data-at="${a.id}"><span class="tx"><span class="d">${esc(a.t)}</span><span class="e">${needsClaude(a) ? L("von Claude prüfen lassen · ", "check with Claude · ") : ""}${a.done ? L("abgeschlossen", "graduated") : a.paused ? L(`pausiert · ${a.sents.length} Sätze`, `paused · ${a.sents.length} sentences`) : a.box === 0 ? L(`${a.sents.length} Sätze warten auf Platz`, `${a.sents.length} sentences waiting for room`) : dn ? L(`${dn} von ${a.sents.length} Sätzen fällig`, `${dn} of ${a.sents.length} sentences due`) : L(`${a.sents.length} Sätze · nächste ${fmtDay(a.due)}`, `${a.sents.length} sentences · next ${fmtDay(a.due)}`)}</span></span>${a.done ? `<span class="badge ok">✓</span>` : a.paused ? `<span class="badge">⏸</span>` : dn ? `<span class="badge due">${dn}</span>` : a.box === 0 ? `<span class="badge">…</span>` : `<span class="badge">${a.box}</span>`}</button>`; };
   const dueN = due.reduce((n, a) => n + dueSents(a).length, 0), waitN = waitingCount();
   const boxes = [1, 2, 3, 4, 5].map(b => { const n = boxCount(b); return `<div class="${n >= BOX_CAP ? "full" : ""}" data-box="${b}" role="button" tabindex="0"><b>${n}</b><span>Box ${b}</span><i><em style="width:${Math.min(100, n / BOX_CAP * 100)}%"></em></i></div>`; }).join("");
   const body = `<div class="boxes">${boxes}</div>
-    <p class="muted small" style="margin:0 2px 10px">${L(`Höchstens ${BOX_CAP} Sätze pro Box.`, `At most ${BOX_CAP} sentences per box.`)}${waitN ? " " + L(`${waitN} neue Sätze warten auf Platz in Box 1.`, `${waitN} new sentences are waiting for room in box 1.`) : ""}</p>
+    <p class="muted small" style="margin:0 2px 10px">${L(`Höchstens ${BOX_CAP} Sätze pro Box.`, `At most ${BOX_CAP} sentences per box.`)}${waitN ? " " + L(`${waitN} Sätze warten auf Platz.`, `${waitN} sentences are waiting for room.`) : ""}${pausedCount() ? " " + L(`${pausedCount()} ${pausedCount() === 1 ? "Atom pausiert" : "Atome pausiert"}.`, `${pausedCount()} ${pausedCount() === 1 ? "atom" : "atoms"} paused.`) : ""}</p>
     <button class="hero" id="rev" ${dueN ? "" : "disabled"}><span class="ic">${dueN}</span><span><span class="tt">${L("Wiederholen", "Review")}</span><span class="ss">${dueN ? L(`${dueN} Sätze aus ${due.length} Atomen.`, `${dueN} sentences from ${due.length} atoms.`) : L("Heute ist nichts fällig.", "Nothing is due today.")}</span></span></button>
     <button class="hero alt" id="drill"><span class="ic">✦</span><span><span class="tt">${L("Gemischt üben", "Mixed practice")}</span><span class="ss">${L("Lücke, Auswahl, Satzbau, Umformen mit deinen Sätzen", "Gap, choice, word order and transform with your sentences")}</span></span></button>
     <button class="hero ghosty" id="smHub"><span class="ic">⇄</span><span><span class="tt">${L("Satzmuster", "Pattern drills")}</span><span class="ss">${smCount() ? L(`${smCount()} Muster: ein Teil wechselt, du sagst den ganzen Satz`, `${smCount()} patterns: one part changes, you say the whole sentence`) : L("Ein Teil wechselt, du sagst den ganzen Satz", "One part changes, you say the whole sentence")}</span></span></button>
@@ -563,8 +611,8 @@ function atomsHub() {
     <details class="fold"><summary>${L("So funktionieren Atome", "How atoms work")}</summary><div class="in small">
       <p style="margin-top:0">${L("Ein Atom ist ein eigener, korrigierter Text. Jeder Satz hat seine eigene Box. Wiederholt wird nach 1, 2, 3, 5 und 7 Tagen. Länger als eine Woche wartet kein Satz.", "An atom is one of your own corrected texts. Every sentence has its own box. Reviews come after 1, 2, 3, 5 and 7 days. No sentence waits longer than a week.")}</p>
       <p>${L("Du siehst die englische Bedeutung und sagst den Satz auf Deutsch. Hängst du fest, holst du dir Hinweise: Stichwörter, dann eine Wortbank, dann einen Lückensatz, am Ende die Lösung. Die Hinweise verraten nie die Grammatik, die du übst.", "You see the English meaning and say the sentence in German. If you're stuck, take hints: key words, then a word bank, then a gap sentence, and finally the answer. Hints never give away the grammar you're practising.")}</p>
-      <p>${L("Danach bewertest du jeden Satz: 1 Keine Ahnung (zurück in Box 1), 2 Schwer (eine Box tiefer), 3 Okay (bleibt), 4 Gut (eine Box höher), 5 Leicht (zwei Boxen höher). Jeder Satz kommt einzeln wieder, wenn er fällig ist.", "Then you rate each sentence: 1 No idea (back to box 1), 2 Hard (down one box), 3 OK (stays), 4 Good (up one box), 5 Easy (up two boxes). Each sentence comes back on its own when it's due.")}</p>
-      <p style="margin-bottom:0">${L(`Keine Box hat mehr als ${BOX_CAP} Sätze. Ist eine Box voll, rückt ihr stärkster Satz eine Box höher. Neue Sätze warten, bis in Box 1 Platz ist. Nach Box 5 ist ein Satz fertig.`, `No box holds more than ${BOX_CAP} sentences. When a box is full, its strongest sentence moves up one box. New sentences wait until box 1 has room. After box 5 a sentence is done.`)}</p></div></details>`;
+      <p>${L("Danach bewertest du jeden Satz: 1 Nochmal (zurück in Box 1), 2 Okay (bleibt in seiner Box), 3 Leicht (eine Box höher). Jeder Satz kommt einzeln wieder, wenn er fällig ist.", "Then you rate each sentence: 1 Again (back to box 1), 2 OK (stays in its box), 3 Easy (up one box). Each sentence comes back on its own when it's due.")}</p>
+      <p style="margin-bottom:0">${L(`Keine Box hat mehr als ${BOX_CAP} Sätze. Ist eine Box voll, rückt ihr stärkster Satz eine Box höher. Neue Sätze warten, bis in Box 1 Platz ist. Nach Box 5 ist ein Satz fertig. Ein pausiertes Atom macht seine Plätze frei und kommt beim Fortsetzen in seine alten Boxen zurück (oder wartet, bis dort Platz ist).`, `No box holds more than ${BOX_CAP} sentences. When a box is full, its strongest sentence moves up one box. New sentences wait until box 1 has room. After box 5 a sentence is done. A paused atom frees its space and goes back to its old boxes when you resume it (or waits until there's room).`)}</p></div></details>`;
   shell(L("Atome", "Atoms"), body, { back: L("Aktiv", "Active"), backTo: "aktiv", redraw: atomsHub });
   $("#rev").onclick = () => { if (dueN) startAtomReview(due.map(a => a.id)); };
   $("#drill").onclick = () => drillHub();
@@ -590,14 +638,15 @@ function atomDetail(id, editing) {
     return;
   }
   const hist = a.hist.slice(-8).map(h => `${fmtDay(h.d)}: ${typeof h.ok === "boolean" ? (h.ok ? "✓" : "✗") : `${h.ok}/${h.n}`}`).join(" · ");
-  const body = `<div class="sit"><span class="lab">${a.done ? L("Abgeschlossen", "Graduated") : a.box === 0 ? L("Wartet auf Platz in Box 1", "Waiting for room in box 1") : L(`Nächste Wiederholung ${fmtDay(a.due)}`, `Next review ${fmtDay(a.due)}`)}</span></div>
+  const body = `<div class="sit"><span class="lab">${a.done ? L("Abgeschlossen", "Graduated") : a.paused ? L("Pausiert: kommt nicht in deine Wiederholungen", "Paused: stays out of your reviews") : a.box === 0 ? L("Wartet auf Platz in Box 1", "Waiting for room in box 1") : L(`Nächste Wiederholung ${fmtDay(a.due)}`, `Next review ${fmtDay(a.due)}`)}</span></div>
     <div class="sec-h">${L("Sätze", "Sentences")}</div>
-    <div class="hl"><div class="slist">${a.sents.map(s => `<div class="s"><div class="de"><span>${markedHtml(s.de)}</span><span class="sbox">${boxLine(s)}</span></div>${s.en ? `<div class="en">${esc(s.en)}</div>` : ""}${s.pend ? `<div class="en" style="color:var(--amber)">${L("wartet auf Claude", "waiting for Claude")}</div>` : s.chk ? `<div class="en" style="color:var(--amber)">${L("geändert, noch nicht geprüft", "changed, not checked yet")}</div>` : ""}</div>`).join("")}</div></div>
+    <div class="hl"><div class="slist">${a.sents.map(s => `<div class="s"><div class="de"><span>${markedHtml(s.de)}</span><span class="sbox">${a.paused && s.paused ? "⏸ " : ""}${boxLine(s)}</span></div>${s.en ? `<div class="en">${esc(s.en)}</div>` : ""}${s.pend ? `<div class="en" style="color:var(--amber)">${L("wartet auf Claude", "waiting for Claude")}</div>` : s.chk ? `<div class="en" style="color:var(--amber)">${L("geändert, noch nicht geprüft", "changed, not checked yet")}</div>` : ""}</div>`).join("")}</div></div>
     <div id="fixHost"></div>
     ${TTS ? `<button class="btn ghost" data-say="${esc(a.corr)}">${L("Ganzen Text anhören", "Play the whole text")}</button>` : ""}
     ${a.up ? `<div class="up"><div class="lab"><span>${L("Eine Stufe höher (B1)", "One step up (B1)")}</span>${TTS ? `<button class="spk" data-say="${esc(a.up)}">${ICON.spk}</button>` : ""}</div>${esc(a.up)}</div>` : ""}
     ${hist ? `<p class="muted small">${hist}</p>` : ""}
     ${a.sents.some(x => isLive(x) && !x.pend) ? `<button class="btn primary" id="now">${L("Jetzt wiederholen", "Review now")}</button>` : ""}
+    ${a.done ? "" : `<button class="btn ${a.paused ? "primary" : "ghost"}" id="pz">${a.paused ? L("Fortsetzen", "Resume") : L("Pausieren", "Pause")}</button>`}
     <button class="btn petrol" id="drA">${L("Dieses Atom gemischt üben", "Mixed practice for this atom")}</button>
     <button class="btn ghost" id="smA">${(a.pm || []).length ? L(`Satzmuster üben (${a.pm.length})`, `Pattern drills (${a.pm.length})`) : L("Satzmuster von Claude holen", "Get pattern drills from Claude")}</button>
     <div class="row2"><button class="btn ghost" id="edit">${L("Bearbeiten", "Edit")}</button><button class="btn ghost" id="del">${L("Löschen", "Delete")}</button></div>`;
@@ -606,6 +655,7 @@ function atomDetail(id, editing) {
   fixBlock($("#fixHost"), a, () => atomDetail(id), { allow: true });
 
   const nw = $("#now"); if (nw) nw.onclick = () => startAtomReview([id], true);
+  const pz = $("#pz"); if (pz) pz.onclick = () => { if (a.paused) { resumeAtom(a); toast(a.box === 0 ? L("Fortgesetzt. Die Boxen sind voll: die Sätze warten auf Platz.", "Resumed. The boxes are full, so the sentences wait for room.") : L("Fortgesetzt", "Resumed")); } else { pauseAtom(a); toast(L("Pausiert", "Paused")); } atomDetail(id); };
   $("#drA").onclick = () => drillHub(id);
   $("#smA").onclick = () => (a.pm || []).length ? smHub(id) : smFetch([id], () => atomDetail(id));
   $("#edit").onclick = () => atomDetail(id, true);
@@ -740,7 +790,7 @@ function drawCompare(st, a, k, phase) {
   const chk = $("#chk"); if (chk) chk.onclick = () => { const p = checkPrompt([{ a, att, tr: phase === "transform" ? trFor(a) : "", sis: st.sis }]); if (!shareText(p)) copyText(p, ok => toast(ok ? L("Kopiert. Jetzt bei Claude einfügen.", "Copied. Now paste it to Claude.") : L("Kopieren ging nicht", "Couldn't copy"))); };
   $("#next").onclick = () => {
     const miss = st.sis.find(si => !R.res[rk(a.id, si)] || !R.res[rk(a.id, si)].g);
-    if (miss != null) { toast(single ? L("Bewerte zuerst den Satz (1–5).", "Rate the sentence first (1–5).") : L("Bewerte zuerst alle Sätze (1–5).", "Rate all sentences first (1–5).")); return; }
+    if (miss != null) { toast(single ? L("Bewerte zuerst den Satz (1–3).", "Rate the sentence first (1–3).") : L("Bewerte zuerst alle Sätze (1–3).", "Rate all sentences first (1–3).")); return; }
     st.sis.forEach(si => { const r = R.res[rk(a.id, si)]; r.rung = R.rung[k]; r.att = att; });
     R.i++;
     const nextSt = R.steps[R.i];
@@ -754,7 +804,7 @@ function boxView(b) {
   const days = ATOM_INT[b];
   const list = allSents().filter(y => inBox(y.s, b)).sort((p, q) => String(p.s.due || "").localeCompare(String(q.s.due || "")));
   const row = y => `<button class="bx-row" data-at="${y.a.id}"><div class="de">${esc(plain(y.s.de))}</div>${y.s.en ? `<div class="en">${esc(y.s.en)}</div>` : ""}
-    <div class="sub"><span>${esc(y.a.t)}</span><span>${y.s.last ? L(`zuletzt: ${y.s.last} ${T(RATE[y.s.last])}`, `last: ${y.s.last} ${T(RATE[y.s.last])}`) + " · " : ""}${y.s.pend ? L("wartet auf Claude", "waiting for Claude") : L(`wieder ${fmtDay(y.s.due || today())}`, `back ${fmtDay(y.s.due || today())}`)}</span></div></button>`;
+    <div class="sub"><span>${esc(y.a.t)}</span><span>${y.s.last && ARATE[y.s.last] ? L(`zuletzt: ${T(ARATE[y.s.last])}`, `last: ${T(ARATE[y.s.last])}`) + " · " : ""}${y.s.pend ? L("wartet auf Claude", "waiting for Claude") : L(`wieder ${fmtDay(y.s.due || today())}`, `back ${fmtDay(y.s.due || today())}`)}</span></div></button>`;
   const body = `<p class="muted" style="margin-top:4px">${L(`Sätze in Box ${b} kommen ${days} ${days === 1 ? "Tag" : "Tage"} nach der letzten Wiederholung wieder.`, `Sentences in box ${b} come back ${days} ${days === 1 ? "day" : "days"} after their last review.`)} ${b === 1 ? L("Hier landen neue und vergessene Sätze.", "New and forgotten sentences land here.") : b === 5 ? L("Noch eine gute Wiederholung, dann ist der Satz fertig.", "One more good review and the sentence is done.") : ""}</p>
     ${list.length ? `<div class="list">${list.map(row).join("")}</div>` : `<p class="empty">${L("Diese Box ist leer.", "This box is empty.")}</p>`}`;
   shell(L(`Box ${b} (${list.length})`, `Box ${b} (${list.length})`), body, { back: L("Atome", "Atoms"), backTo: "aktiv", redraw: () => boxView(b) });
@@ -766,7 +816,7 @@ function gradeRowHtml(a, si) {
   const s = a.sents[si], r = R.res[rk(a.id, si)] || {};
   return `<div class="gr" id="gr-${si}"><div class="tgt"><span>${markedHtml(s.de)}</span>${TTS ? `<button class="spk" data-say="${esc(plain(s.de))}" aria-label="${L("Anhören", "Play")}">${ICON.spk}</button>` : ""}</div>
     ${s.en ? `<div class="en2">${esc(s.en)}</div>` : ""}
-    <div class="g5 ${r.g ? "picked" : ""}">${[1, 2, 3, 4, 5].map(n => `<button data-g="${n}" class="${r.g === String(n) ? "on" : ""}" aria-label="${n} ${esc(T(RATE[n]))}"><b>${n}</b><span>${esc(T(RATE[n]))}</span></button>`).join("")}</div></div>`;
+    <div class="g5 g3 ${r.g ? "picked" : ""}">${[1, 2, 3].map(n => `<button data-g="${n}" class="${r.g === String(n) ? "on" : ""}" aria-label="${n} ${esc(T(ARATE[n]))}"><b>${n}</b><span>${esc(T(ARATE[n]))}</span></button>`).join("")}</div></div>`;
 }
 
 function bindGradeRow(a, si, k) {
@@ -778,10 +828,10 @@ function bindGradeRow(a, si, k) {
   });
 }
 
-/* scoring: 1-2 count as a mistake for the sentence's patterns, 3 as needing help, 4-5 as right */
+/* scoring: 1 Again counts as a mistake for the sentence's patterns, 2 OK as needing help, 3 Easy as right */
 function scoreSentence(a, si, r) {
-  const x = a.sents[si], n = +r.g || 3;
-  x.fp.filter(id => DB.pats[id]).forEach(id => patEvent(id, n <= 2 ? "fail" : n === 3 ? "hint" : "ok"));
+  const x = a.sents[si], n = Math.max(1, Math.min(3, +r.g || 2));
+  x.fp.filter(id => DB.pats[id]).forEach(id => patEvent(id, n === 1 ? "fail" : n === 2 ? "hint" : "ok"));
   return n;
 }
 
@@ -791,9 +841,9 @@ function finishAtom(a) {
     const r = R.res[rk(a.id, si)]; if (!r) return;
     const g = scoreSentence(a, si, r); n++;
     const b = Math.max(1, Math.min(5, x.box || 1));
-    const target = g === 1 ? 1 : g === 2 ? Math.max(1, b - 1) : g === 3 ? b : g === 4 ? b + 1 : b + 2;
+    const target = g === 1 ? 1 : g === 2 ? b : b + 1;
     x.last = g; place(x, target);
-    if (g >= 4) good++;
+    if (g === 3) good++;
   });
   admitWaiting(); DB.atoms.forEach(syncAtom);
   a.hist.push({ d: today(), b: old, ok: good, n });
@@ -816,8 +866,8 @@ function checkPrompt(items) {
 function reviewDone() {
   const s = R; R = null;
   const res = Object.values(s.res), n = res.length;
-  const free = res.filter(r => +r.g >= 4).length, help = res.filter(r => +r.g === 3).length, bad = n - free - help;
-  const touched = [...new Set(Object.keys(s.res).filter(key => +s.res[key].g <= 2).flatMap(key => { const [aid, si] = key.split("|"); const a = atomById(aid); return a && a.sents[+si] ? a.sents[+si].fp : []; }))].filter(x => DB.pats[x]);
+  const free = res.filter(r => +r.g === 3).length, help = res.filter(r => +r.g === 2).length, bad = n - free - help;
+  const touched = [...new Set(Object.keys(s.res).filter(key => +s.res[key].g === 1).flatMap(key => { const [aid, si] = key.split("|"); const a = atomById(aid); return a && a.sents[+si] ? a.sents[+si].fp : []; }))].filter(x => DB.pats[x]);
   if (s.kind === "pat") {
     // free practice: only the patterns change
     s.steps.forEach(st => { const a = atomById(st.aid); if (!a) return; st.sis.forEach(si => { const r = s.res[rk(a.id, si)]; if (r) { R = s; scoreSentence(a, si, r); R = null; } }); });
@@ -825,8 +875,8 @@ function reviewDone() {
   }
   const attempts = [];
   s.steps.forEach(st => { const a = atomById(st.aid); if (!a) return; const k = st.aid + "#" + st.sis.join(","); if ((s.att[k] || "").trim()) attempts.push({ a, att: s.att[k].trim(), tr: atomPhase(a) === "transform" && s.kind === "due" ? (s.tr[a.id] || "") : "", sis: st.sis }); });
-  const body = `<div class="result"><div class="pct">${free}/${n}</div><div class="lbl">${L("Sätze gut oder leicht", "sentences good or easy")}</div></div>
-    <div class="stats"><div><b>${free}</b><span>${L("gut / leicht", "good / easy")}</span></div><div><b>${help}</b><span>${L("okay", "OK")}</span></div><div><b>${bad}</b><span>${L("schwer / keine Ahnung", "hard / no idea")}</span></div></div>
+  const body = `<div class="result"><div class="pct">${free}/${n}</div><div class="lbl">${L("Sätze leicht", "sentences easy")}</div></div>
+    <div class="stats"><div><b>${free}</b><span>${L("leicht", "easy")}</span></div><div><b>${help}</b><span>${L("okay", "OK")}</span></div><div><b>${bad}</b><span>${L("nochmal", "again")}</span></div></div>
     ${touched.length ? `<div class="hint"><b>${L("Diese Muster kamen heute vor:", "These patterns came up today:")}</b><ul class="fp">${touched.map(x => `<li>${esc(patLabel(x))}</li>`).join("")}</ul></div>` : ""}
     ${attempts.length ? `<button class="btn ghost" id="chk">${L("Alle Versuche von Claude prüfen lassen", "Ask Claude to check all attempts")}</button>` : ""}
     ${s.kind === "pat" ? `<button class="btn primary" id="again">${L("Nochmal üben", "Practise again")}</button>` : `<button class="btn primary" id="new">${L("Neues Atom schreiben", "Write a new atom")}</button>`}
@@ -963,7 +1013,7 @@ function drillPool(src, aid) {
       if (aid) { out.push({ a, si }); return; }
       if (src === "due" && !dueSents(a).includes(si)) return;
       if (src === "weak" && !(isLive(x) && x.box <= 2)) return;
-      if (src === "all" && x.box >= 6) return;
+      if (src === "all" && (x.box >= 6 || a.paused)) return;
       out.push({ a, si });
     });
   });

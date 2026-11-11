@@ -173,7 +173,7 @@ function fsItems(src) {
     ws.forEach(w => out.push({ k: "w:" + w.id, src: "w", en: w.exEn, de: w.ex, note: full(w) }));
   }
   if ((src === "a" || src === "mix") && typeof allSents === "function") {
-    allSents().forEach(({ a, s, si }) => { if (s.en && !s.wait && !s.pend) out.push({ k: "a:" + a.id + "#" + si, src: "a", en: s.en, de: plain(stripGuess(s.de)), note: a.t || "" }); });
+    allSents().forEach(({ a, s, si }) => { if (s.en && !s.wait && !s.pend && !a.paused) out.push({ k: "a:" + a.id + "#" + si, src: "a", en: s.en, de: plain(stripGuess(s.de)), note: a.t || "" }); });
   }
   if (src === "r" || src === "mix") {
     REDEMITTEL.forEach(r => out.push({ k: "r:" + r.id, src: "r", en: r.en, de: r.de, note: T([RM_CATS[r.cat][0], RM_CATS[r.cat][1]]) }));
@@ -201,7 +201,7 @@ function fsHub() {
   lrStop();
   const f = flDB(), p = f.fs;
   const weak = Object.values(f.s).filter(c => c.last && c.last <= 2).length, done = Object.keys(f.s).length;
-  const nA = typeof allSents === "function" ? allSents().filter(({ s }) => s.en && !s.wait && !s.pend).length : 0;
+  const nA = typeof allSents === "function" ? allSents().filter(({ a, s }) => s.en && !s.wait && !s.pend && !a.paused).length : 0;
   const chip = (k, v, l) => `<button class="chip" data-k="${k}" data-v="${v}" aria-pressed="${String(p[k]) === String(v)}">${esc(l)}</button>`;
   const body = `<p class="muted" style="margin-top:4px">${L("Du siehst einen englischen Satz und sagst ihn auf Deutsch, bevor die Zeit abläuft. Nicht nachdenken, einfach losreden. So wird Deutsch schneller abrufbar.", "You see an English sentence and say it in German before time runs out. Don't think, just start talking. This is how German gets faster to recall.")}</p>
     <div class="stats"><div><b>${done}</b><span>${L("geübt", "practised")}</span></div><div><b>${weak}</b><span>${L("noch schwer", "still hard")}</span></div><div><b>${nA}</b><span>${L("Atom-Sätze", "atom sentences")}</span></div></div>
