@@ -644,6 +644,7 @@ function atomDetail(id, editing) {
     <div id="fixHost"></div>
     ${TTS ? `<button class="btn ghost" data-say="${esc(a.corr)}">${L("Ganzen Text anhören", "Play the whole text")}</button>` : ""}
     ${a.up ? `<div class="up"><div class="lab"><span>${L("Eine Stufe höher (B1)", "One step up (B1)")}</span>${TTS ? `<button class="spk" data-say="${esc(a.up)}">${ICON.spk}</button>` : ""}</div>${esc(a.up)}</div>` : ""}
+    <div id="mp3Host"></div>
     ${hist ? `<p class="muted small">${hist}</p>` : ""}
     ${a.sents.some(x => isLive(x) && !x.pend) ? `<button class="btn primary" id="now">${L("Jetzt wiederholen", "Review now")}</button>` : ""}
     ${a.done ? "" : `<button class="btn ${a.paused ? "primary" : "ghost"}" id="pz">${a.paused ? L("Fortsetzen", "Resume") : L("Pausieren", "Pause")}</button>`}
@@ -653,6 +654,7 @@ function atomDetail(id, editing) {
   shell(a.t, body, { back: L("Atome", "Atoms"), backTo: "aktiv", redraw: () => atomDetail(id) });
   $("#back").onclick = () => atomsHub();
   fixBlock($("#fixHost"), a, () => atomDetail(id), { allow: true });
+  if (typeof mp3Block === "function") mp3Block($("#mp3Host"), a);
 
   const nw = $("#now"); if (nw) nw.onclick = () => startAtomReview([id], true);
   const pz = $("#pz"); if (pz) pz.onclick = () => { if (a.paused) { resumeAtom(a); toast(a.box === 0 ? L("Fortgesetzt. Die Boxen sind voll: die Sätze warten auf Platz.", "Resumed. The boxes are full, so the sentences wait for room.") : L("Fortgesetzt", "Resumed")); } else { pauseAtom(a); toast(L("Pausiert", "Paused")); } atomDetail(id); };

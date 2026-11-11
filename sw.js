@@ -1,13 +1,16 @@
-const CACHE="b1-wortschatz-v37";
-const CORE=["./","index.html","shk-data.js","aktiv-data.js","shk-aktiv.js","aktiv.js","atome.js","satzmuster.js","fluency-data.js","fluency.js","manifest.webmanifest","icon-192.png","icon-512.png",
+const CACHE="b1-wortschatz-v38";
+const VOICE_CACHE="b1-voice-v1"; // the MP3 voice (tts/): downloaded by the app on first use, kept across updates
+const CORE=["./","index.html","shk-data.js","aktiv-data.js","shk-aktiv.js","aktiv.js","atome.js","satzmuster.js","fluency-data.js","fluency.js","tts-mp3.js","manifest.webmanifest","icon-192.png","icon-512.png",
   "grammatik/index.html","grammatik/shk-items.js","grammatik/fonts/bricolage.woff2"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));});
-self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
+self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE&&k!==VOICE_CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener("fetch",e=>{
   const r=e.request; if(r.method!=="GET") return;
   const url=new URL(r.url);
   if(url.origin!==location.origin) return;
   const p=url.pathname;
+  // voice files: the app manages its own cache for them; never copy 75 MB into the app cache
+  if(p.includes("/tts/")) return;
   // the cache key is the file's own path: a folder means its index.html (the app page and the grammar page each keep their own copy)
   const key=new URL(p.endsWith("/")?p+"index.html":p, url.origin).href;
   if(r.mode==="navigate"||p.endsWith("/")||p.endsWith(".html")||p.endsWith(".js")){
