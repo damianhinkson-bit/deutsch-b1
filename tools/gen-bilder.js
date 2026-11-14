@@ -1,7 +1,7 @@
 const fs=require('fs');const R=__dirname+'/../';
 const src=fs.readFileSync(R+'index.html','utf8');const RAW=eval(src.match(/const RAW\s*=\s*(\[[\s\S]*?\]);\n/)[1]);
 let SHK_RAW;eval(fs.readFileSync(R+'shk-data.js','utf8').replace(/const SHK_RAW/,'SHK_RAW'));
-const all=RAW.concat(SHK_RAW);const S=require(__dirname+'/bilder-src.js');
+const all=RAW.concat(SHK_RAW);const S=Object.assign({},require(__dirname+'/bilder-src.js'),require(__dirname+'/shk2-src.js'));const AL=S.__alias||{};delete S.__alias;for(const k in AL)S[k]=S[AL[k]];
 const out=[];let bad=0;
 for(const k in S){const [de,th]=k.split('@');const hits=all.filter(r=>r[3]===de&&(!th||r[8]===th));
  if(!hits.length){console.log('MISSING',k);bad++;continue;}
