@@ -122,6 +122,10 @@ body.gram-on .app{max-width:none;padding-bottom:0;min-height:0}
 .card .en{font-size:20px;font-weight:700;margin:10px 0 2px}
 .card .meta{color:var(--muted);font-size:14.5px}
 .card .spk{position:absolute;top:12px;right:12px}
+.pic{margin:14px auto 2px;max-width:260px}.pic svg{display:block;width:100%;height:auto;max-height:150px}
+.pic.foto{max-width:none}.pic img{display:block;margin:0 auto;max-width:100%;max-height:200px;border-radius:14px;object-fit:contain}
+.pic .o{stroke:var(--ink);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.pic .n{fill:none}.pic .p{fill:var(--petrol-soft)}.pic .a{fill:var(--amber)}.pic .s{fill:var(--surface-2)}.pic .w{fill:var(--surface)}.pic .i{fill:var(--ink)}.pic .b{fill:var(--der)}.pic .r{fill:var(--bad)}.pic .t{fill:var(--amber-tint)}.pic .k{fill:#0b2427}.pic .y{fill:#fff}
+.pic .sr{stroke:var(--bad)}.pic .sb{stroke:var(--der)}.pic .sa{stroke:var(--amber)}.pic .sw{stroke:var(--surface)}.pic .ss{stroke:var(--surface-2)}.pic .w7{stroke-width:7}.pic .w12{stroke-width:12}.pic .w6{stroke-width:6}.pic .w15{stroke-width:1.5}
 .art-der{color:var(--der)} .art-die{color:var(--die)} .art-das{color:var(--das)}
 .ex{margin-top:14px;padding:12px 14px;background:var(--bg);border-radius:14px;text-align:left}
 .ex .de{font-weight:700;display:flex;gap:8px;justify-content:space-between;align-items:flex-start}
@@ -694,12 +698,14 @@ function detail(id){
   const w=BY[id], c=DB.cards[id];
   const dueTxt=c?(c.due<=today()?L("heute","today"):esc(new Date(c.due+"T12:00").toLocaleDateString(EN()?"en-GB":"de-DE",{day:"numeric",month:"short"}))):"";
   const body=`<div class="card">${TTS?`<button class="spk" data-say="${esc(full(w))}" aria-label="${L("Wort anhören","Play word")}">${ICON.spk}</button>`:""}
-    <div class="mode">${esc(THEME(w.t))}</div><div class="w ${full(w).length>18?"sm":""}">${head(w)}</div><div class="meta">${esc(metaLine(w))}</div><div class="en">${esc(w.en)}</div>${exBlock(w)}</div>
+    <div class="mode">${esc(THEME(w.t))}</div><div class="w ${full(w).length>18?"sm":""}">${head(w)}</div><div class="meta">${esc(metaLine(w))}</div><div class="en">${esc(w.en)}</div>${picSlot(w)}${exBlock(w)}</div>
    ${TTS?`<div class="row2"><button class="btn petrol" data-say="${esc(full(w))}">${L("Wort anhören","Play word")}</button>${w.ex?`<button class="btn ghost" data-say="${esc(w.ex)}">${L("Satz anhören","Play sentence")}</button>`:""}</div>`:`<div class="tts-note">${L("Vorlesen geht in dieser Ansicht nicht. Öffne die App in Chrome, dann kannst du Wort und Satz hören.","Reading aloud doesn't work in this view. Open the app in Chrome to hear the word and sentence.")}</div>`}
    ${c?"":`<button class="btn primary" id="addW">${L("Dieses Wort jetzt lernen","Learn this word now")}</button>`}
    <button class="btn ${c&&c.known?"ghost":"petrol"}" id="knW">${c&&c.known?L("Doch nicht bekannt","Not known after all"):L("Kenne ich schon","I already know this")}</button>
-   <p class="muted small" style="text-align:center">${c&&c.known?L("Als bekannt markiert","Marked as known"):c?`${L("Stufe","Level")} ${c.lv} · ${L("nächste Wiederholung","next review")} ${dueTxt}`:L("Noch nicht gelernt","Not learned yet")}${DB.miss[id]?` · ${L("als Fehler gemerkt","remembered as a mistake")}`:""}</p>`;
+   <p class="muted small" style="text-align:center">${c&&c.known?L("Als bekannt markiert","Marked as known"):c?`${L("Stufe","Level")} ${c.lv} · ${L("nächste Wiederholung","next review")} ${dueTxt}`:L("Noch nicht gelernt","Not learned yet")}${DB.miss[id]?` · ${L("als Fehler gemerkt","remembered as a mistake")}`:""}</p>
+   ${picButtons()}`;
   shell(L("Wort","Word"),body,{back:L("Liste","Words"),backTo:"liste",redraw:()=>detail(id)});
+  bindPic(w,()=>detail(id));
   $("#knW").onclick=()=>{ setKnown(id,!(DB.cards[id]&&DB.cards[id].known)); toast(isKnown(id)?L("Als bekannt markiert","Marked as known"):L("Markierung entfernt","Mark removed")); detail(id); };
   const a=$("#addW"); if(a) a.onclick=()=>{ introduce(id); save(); toast(L("Hinzugefügt. Es kommt heute in deine Wiederholung.","Added. It will come up in today's review.")); detail(id); };
 }
@@ -726,9 +732,10 @@ function mehr(){
    <button class="btn petrol" id="copy">${L("Code kopieren","Copy code")}</button>
    <textarea class="ta" id="imp" placeholder="${L("Sicherungscode hier einfügen","Paste backup code here")}" aria-label="${L("Sicherungscode einfügen","Paste backup code")}" style="margin-top:14px"></textarea>
    <button class="btn ghost" id="load">${L("Fortschritt laden","Load progress")}</button>
+   ${fotoBackupHTML()}
    <div class="h2">${L("Zurücksetzen","Reset")}</div>
    <button class="btn ghost" id="reset">${L("Allen Fortschritt löschen","Delete all progress")}</button>`;
-  shell(L("Mehr","More"),body,{redraw:mehr}); bindSayToggle(); bindMissLevel(mehr);
+  shell(L("Mehr","More"),body,{redraw:mehr}); bindSayToggle(); bindMissLevel(mehr); bindFotoBackup();
   document.querySelectorAll("[data-lang]").forEach(b=>b.onclick=()=>{ DB.lang=b.dataset.lang; save(); renderTabs(); mehr(); });
   const cm=$("#clrMiss"); if(cm) cm.onclick=()=>{ DB.miss={}; save(); toast(L("Fehler gelöscht","Mistakes cleared")); mehr(); };
   $("#copy").onclick=()=>{const t=$("#exp");const v=t.value;const fall=()=>{t.focus();t.select();toast(L("Code markiert. Jetzt kopieren.","Code selected. Copy it now."));};try{navigator.clipboard.writeText(v).then(()=>toast(L("Code kopiert","Code copied")),fall);}catch(e){fall();}};
@@ -745,6 +752,8 @@ function mehr(){
 <script src="fluency-data.js"></script>
 <script src="fluency.js"></script>
 <script src="tts-mp3.js"></script>
+<script src="bilder.js"></script>
+<script src="fotos.js"></script>
 <script>renderTabs(); go("home");</script>
 
 <script>
