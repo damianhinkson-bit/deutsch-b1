@@ -1,4 +1,4 @@
-const CACHE="b1-wortschatz-v40";
+const CACHE="b1-wortschatz-v41";
 const VOICE_CACHE="b1-voice-v1"; // the MP3 voice (tts/): downloaded by the app on first use, kept across updates
 const CORE=["./","index.html","shk-data.js","aktiv-data.js","shk-aktiv.js","aktiv.js","atome.js","satzmuster.js","fluency-data.js","fluency.js","tts-mp3.js","bilder.js","fotos.js","manifest.webmanifest","icon-192.png","icon-512.png",
   "grammatik/index.html","grammatik/shk-items.js","grammatik/fonts/bricolage.woff2"];

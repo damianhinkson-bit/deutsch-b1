@@ -23,6 +23,7 @@
   .sm-cue .w{display:inline-block;margin-top:6px;background:var(--amber);color:var(--amber-ink);font-size:26px;font-weight:800;border-radius:16px;padding:10px 22px}
   .sm-mic{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;margin-top:14px;background:var(--petrol);color:var(--on-petrol);border-radius:var(--r-lg);padding:18px;font-weight:800;font-size:18px}
   .sm-mic.on{background:var(--bad)}
+  .sm-mic svg{width:26px;height:26px;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .sm-heard{min-height:26px;text-align:center;font-size:17px;font-weight:700;margin-top:10px;color:var(--muted)}
   .sm-row{display:block;width:100%;text-align:left;padding:12px 14px;border-bottom:1px solid var(--line)}
   .sm-row:last-child{border-bottom:none}
@@ -104,7 +105,9 @@ function smAll(aid) {
   return out;
 }
 function smCount() { return smAll().length; }
-function smFind(aid, mid) { const a = atomById(aid); const m = a && (a.pm || []).find(x => x.id === mid); return m ? { a, m } : null; }
+// an owner of patterns is an atom, or a mistake pattern ("p:" + its id in DB.pats)
+function smOwner(aid) { if (String(aid).startsWith("p:")) { const p = DB.pats && DB.pats[String(aid).slice(2)]; return p || null; } return atomById(aid); }
+function smFind(aid, mid) { const a = smOwner(aid); const m = a && (a.pm || []).find(x => x.id === mid); return m ? { a, m } : null; }
 function smSorted(aid) {
   return smAll(aid).sort((p, q) => {
     if (!p.m.n !== !q.m.n) return p.m.n ? 1 : -1;
@@ -233,7 +236,7 @@ function smStep() {
     ${r ? "" : `<button class="btn ghost" id="smShow" style="margin-top:8px">${L("Lösung zeigen", "Show the answer")}</button>`}
     <div class="seg" id="smMd" style="margin-top:16px"><button data-v="say" aria-pressed="${mode === "say"}" ${SRC ? "" : "disabled"}>${L("Sprechen", "Speak")}</button><button data-v="type" aria-pressed="${mode === "type"}">${L("Tippen", "Type")}</button></div>
     <div id="smFb"></div>`;
-  shell(SM.one ? L("Satzmuster", "Pattern drill") : L("Satzmuster gemischt", "Mixed patterns"), body, { back: L("Zurück", "Back"), backTo: "aktiv", redraw: smStep });
+  shell(SM.pat ? patLabel(SM.pat) : SM.one ? L("Satzmuster", "Pattern drill") : L("Satzmuster gemischt", "Mixed patterns"), body, { back: L("Zurück", "Back"), backTo: "aktiv", redraw: smStep });
   $("#back").onclick = () => { recStop(); const b = SM.back; SM = null; b(); };
   document.querySelectorAll("#smMd button").forEach(b => b.onclick = () => { if (b.disabled || SM.res[SM.i]) return; DB.smMode = b.dataset.v; save(); smStep(); });
   if (r) { smFeedback(it, r); return; }
@@ -284,28 +287,105 @@ function smDone() {
   // per pattern: rounds played and share right this round
   const by = new Map(); res.forEach(r => { const k = r.aid + "|" + r.mid; if (!by.has(k)) by.set(k, []); by.get(k).push(r); });
   by.forEach((rs, k) => { const [aid, mid] = k.split("|"); const x = smFind(aid, mid); if (!x) return; x.m.n = (x.m.n || 0) + 1; x.m.last = rs.filter(r => r.ok).length / rs.length; x.m.d = today(); });
+  // swaps for a mistake pattern count for its last-12 bar
+  res.forEach(r => { if (String(r.aid).startsWith("p:")) patEvent(r.aid.slice(2), r.ok ? (r.fixed ? "hint" : "ok") : "fail"); });
   save();
   const wrong = res.filter(r => !r.ok);
   const missHtml = wrong.map(r => { const x = smFind(r.aid, r.mid), it = x && x.m.items[r.ii]; return it ? `<div class="sm-miss"><div class="c">${esc(it.cue)}</div><b>${esc(it.de)}</b></div>` : ""; }).join("");
-  const nextUp = smSorted().find(x => !s.one || x.m.id !== s.one.mid);
+  const nextUp = s.pat ? null : smSorted().find(x => !s.one || x.m.id !== s.one.mid);
+  const nextPat = s.pat ? patSmNext(s.pat) : null;
+  const pst = s.pat ? patStats(s.pat) : null;
   const body = `<div class="result"><div class="pct">${right}/${res.length}</div><div class="lbl">${L("richtig", "right")}</div></div>
+    ${pst ? `<div class="hl"><span class="lab">${esc(patLabel(s.pat))} · ${L("letzte 12 Versuche", "last 12 attempts")}</span>${patBar(pst)}<div class="sub muted small" style="margin-top:6px">${patLine(pst)}</div></div>` : ""}
     ${missHtml ? `<div class="hl"><span class="lab">${L("Nochmal ansehen", "Look again")}</span>${missHtml}</div>` : ""}
     ${wrong.length ? `<button class="btn primary" id="smAgain">${L(`Fehler nochmal (${wrong.length})`, `Mistakes again (${wrong.length})`)}</button>` : ""}
     ${s.one ? `<button class="btn ${wrong.length ? "ghost" : "primary"}" id="smRe">${L("Dieses Muster nochmal", "This pattern again")}</button>` : `<button class="btn ${wrong.length ? "ghost" : "primary"}" id="smRe">${L("Neue gemischte Runde", "New mixed round")}</button>`}
-    ${s.one && nextUp ? `<button class="btn petrol" id="smNextP" style="margin-top:8px">${L("Nächstes Muster", "Next pattern")}</button>` : ""}
-    <button class="btn ghost" id="smBack" style="margin-top:8px">${L("Zu den Satzmustern", "Back to patterns")}</button>
-    ${s.one ? `<button class="btn ghost" id="smDel" style="margin-top:8px">${L("Dieses Muster löschen", "Delete this pattern")}</button>` : ""}`;
+    ${s.one && (nextUp || nextPat) ? `<button class="btn petrol" id="smNextP" style="margin-top:8px">${nextPat ? L(`Nächstes Fehlermuster: ${esc(patLabel(nextPat))}`, `Next mistake pattern: ${esc(patLabel(nextPat))}`) : L("Nächstes Muster", "Next pattern")}</button>` : ""}
+    <button class="btn ghost" id="smBack" style="margin-top:8px">${s.pat ? L("Zu den Fehlermustern", "Back to mistake patterns") : L("Zu den Satzmustern", "Back to patterns")}</button>
+    ${s.one && !s.pat ? `<button class="btn ghost" id="smDel" style="margin-top:8px">${L("Dieses Muster löschen", "Delete this pattern")}</button>` : ""}`;
   SM = null;
   shell(L("Geschafft", "Done"), body, { back: L("Muster", "Patterns"), backTo: "aktiv" });
   $("#back").onclick = s.back;
-  const ag = $("#smAgain"); if (ag) ag.onclick = () => { SM = { steps: shuffle(wrong.map(r => ({ aid: r.aid, mid: r.mid, ii: r.ii }))), i: 0, res: [], back: s.back, one: s.one }; smStep(); };
-  $("#smRe").onclick = () => { SM = { steps: shuffle(s.steps.slice()), i: 0, res: [], back: s.back, one: s.one }; smStep(); };
-  const np = $("#smNextP"); if (np) np.onclick = () => smStartPattern(nextUp.a.id, nextUp.m.id, s.back);
+  const ag = $("#smAgain"); if (ag) ag.onclick = () => { SM = { steps: shuffle(wrong.map(r => ({ aid: r.aid, mid: r.mid, ii: r.ii }))), i: 0, res: [], back: s.back, one: s.one, pat: s.pat }; smStep(); };
+  $("#smRe").onclick = () => { if (s.pat) { patSmStart(s.pat, s.back); return; } SM = { steps: shuffle(s.steps.slice()), i: 0, res: [], back: s.back, one: s.one }; smStep(); };
+  const np = $("#smNextP"); if (np) np.onclick = () => nextPat ? patSmStart(nextPat, s.back) : smStartPattern(nextUp.a.id, nextUp.m.id, s.back);
   $("#smBack").onclick = s.back;
   const del = $("#smDel"); let armed = false;
   if (del) del.onclick = () => {
     if (!armed) { armed = true; del.textContent = L("Nochmal tippen zum Löschen", "Tap again to delete"); del.classList.add("bad"); return; }
     const x = smFind(s.one.aid, s.one.mid); if (x) { x.a.pm = x.a.pm.filter(m => m.id !== s.one.mid); save(); }
     toast(L("Gelöscht", "Deleted")); s.back();
+  };
+}
+
+/* =================================================================== SWAP DRILLS FOR MISTAKE PATTERNS
+   Each mistake pattern can hold its own swap patterns (DB.pats[id].pm, same format as atom.pm).
+   Claude builds them from your own sentences with that mistake, with the slot on the mistake. */
+function patPm(pid) { const p = DB.pats[pid]; return p ? (p.pm || []).filter(m => m.items && m.items.length) : []; }
+function patSmNext(not) {
+  const list = patsSorted().filter(p => p.id !== not && patPm(p.id).length);
+  return list.length ? list[0].id : null;
+}
+function patsWithoutSm() { return patsSorted().filter(p => p.atoms && !patPm(p.id).length).map(p => p.id); }
+// tap a mistake pattern: its swap drill, or the request to get one
+function patSmGo(pid, back) { if (patPm(pid).length) patSmStart(pid, back); else patSmFetch([pid], back, true); }
+function patSmStart(pid, back) {
+  recStop(); atomsReady();
+  const pm = patPm(pid);
+  if (!pm.length) { patSmFetch([pid], back, true); return; }
+  const all = [];
+  pm.forEach(m => m.items.forEach((it, ii) => all.push({ aid: "p:" + pid, mid: m.id, ii })));
+  // every pattern of this mistake comes in, mixed, at most 12 swaps
+  SM = { steps: shuffle(all).slice(0, 12), i: 0, res: [], back, one: { aid: "p:" + pid, mid: pm[0].id }, pat: pid };
+  smStep();
+}
+function patSmPrompt(pids) {
+  const P = ["Ich übe Deutsch (Ziel: flüssig auf B1) mit Satzmustern: Ein Teil des Satzes wechselt, und ich sage den ganzen Satz neu, mit der richtigen Form. Ich will damit meine typischen Fehler loswerden. Bitte mach für jedes Fehlermuster unten 2–3 Satzmuster.", ""];
+  if (shkLine()) P.push(shkLine() + " Die Stichwörter in den Mustern sollen möglichst aus diesem Bereich kommen.", "");
+  pids.forEach((pid, i) => {
+    const p = DB.pats[pid];
+    P.push(`TEXT ${i + 1}: Fehlermuster „${p.name}“${p.en ? ` (${p.en})` : ""}`);
+    const own = patSentences(pid).map(({ a, si }) => a.sents[si]).filter(x => x && !x.pend && plain(x.de).trim());
+    if (own.length) { P.push("Meine korrigierten Sätze mit diesem Fehler (die korrigierten Stellen in [eckigen Klammern]):"); own.slice(0, 10).forEach((x, j) => P.push(`${j + 1}. ${x.de}`)); }
+    if ((p.pm || []).length) P.push("(Diese Muster habe ich schon, bitte andere: " + p.pm.map(m => m.f).join(" / ") + ")");
+    P.push("");
+  });
+  P.push("Regeln: Nimm als Mustersatz am liebsten einen meiner Sätze (wenn keiner passt, einen ähnlichen aus derselben Situation). Setz GENAU EINE Stelle in [eckige Klammern]: die Stelle, an der ich den Fehler gemacht habe, so dass ich bei jedem Austausch genau diese Regel neu anwenden muss. " + SM_RULES.slice(2).join(" "), "");
+  P.push(`Schreib zuerst kurz auf Englisch, was jedes Muster übt. Schreib danach genau diesen Block, 2–3 Muster pro Fehlermuster${pids.length > 1 ? ", jedes mit seiner Nummer (TEXT 1, TEXT 2 …)" : ""}:`);
+  P.push("SATZMUSTER:");
+  if (pids.length > 1) P.push("TEXT 1");
+  SM_FORMAT.forEach(l => P.push(l));
+  if (pids.length > 1) P.push("TEXT 2", "(…)");
+  return P.join("\n");
+}
+function patSmFetch(pids, back, first) {
+  recStop(); atomsReady();
+  const ps = pids.map(id => DB.pats[id]).filter(Boolean);
+  if (!ps.length) { back(); return; }
+  const prompt = patSmPrompt(pids.filter(id => DB.pats[id]));
+  const canShare = (() => { try { return !!navigator.share; } catch (e) { return false; } })();
+  const others = first ? patsWithoutSm().filter(id => !pids.includes(id)) : [];
+  const body = `<p class="muted" style="margin-top:4px">${first ? L("Für dieses Fehlermuster gibt es noch keine Satzmuster. ", "This mistake pattern has no swap drills yet. ") : ""}${L("Claude macht sie aus deinen eigenen Sätzen mit diesem Fehler: Die Stelle, die wechselt, ist genau die Stelle deines Fehlers.", "Claude makes them from your own sentences with this mistake: the part that swaps is exactly where you made the mistake.")}</p>
+    <div class="hl"><span class="lab">${L("In dieser Anfrage", "In this request")}</span>${pids.map(id => `<div style="font-weight:700">${esc(patLabel(id))}</div>`).join("")}</div>
+    ${others.length ? `<button class="btn ghost" id="psAll">${L(`Alle ${Math.min(6, others.length + pids.length)} Fehlermuster ohne Satzmuster in eine Anfrage`, `All ${Math.min(6, others.length + pids.length)} mistake patterns without swap drills in one request`)}</button>` : ""}
+    <div class="cb">
+    <div class="step"><span class="n">1</span><div class="b"><b>${L("An Claude senden", "Send to Claude")}</b>
+      <div class="row2">${canShare ? `<button class="btn petrol" id="psShare">${L("Teilen", "Share")}</button>` : ""}<button class="btn ${canShare ? "ghost" : "petrol"}" id="psCopy">${L("Kopieren", "Copy")}</button></div></div></div>
+    <div class="step"><span class="n">2</span><div class="b"><b>${L("Antwort einfügen", "Paste the reply")}</b>
+      <textarea class="ta2" id="psPaste" placeholder="${L("Claudes ganze Antwort hier einfügen", "Paste Claude's whole reply here")}"></textarea>
+      <button class="btn primary" id="psUse">${L("Muster übernehmen", "Use these patterns")}</button></div></div></div>`;
+  shell(L("Satzmuster holen", "Get swap drills"), body, { back: L("Zurück", "Back"), backTo: "aktiv" });
+  $("#back").onclick = back;
+  const all = $("#psAll"); if (all) all.onclick = () => patSmFetch(pids.concat(others).slice(0, 6), back);
+  const cp = () => copyText(prompt, ok => toast(ok ? L("Kopiert. Jetzt bei Claude einfügen.", "Copied. Now paste it to Claude.") : L("Kopieren ging nicht", "Couldn't copy")));
+  const sh = $("#psShare"); if (sh) sh.onclick = () => { if (!shareText(prompt)) cp(); };
+  $("#psCopy").onclick = cp;
+  $("#psUse").onclick = () => {
+    const per = smReadReply($("#psPaste").value, ps);
+    let n = 0; per.forEach((list, p) => { const add = smStamp(list); p.pm = (p.pm || []).concat(add); n += add.length; });
+    if (!n) { toast(L("Ich finde keine Muster. Bitte die ganze Antwort mit „SATZMUSTER:“ einfügen.", "I can't find any patterns. Please paste the whole reply with “SATZMUSTER:”.")); return; }
+    save(); toast(L(`${n} Muster übernommen`, `${n} patterns added`));
+    // straight into the drill when it was for one pattern
+    if (pids.length === 1 && patPm(pids[0]).length) patSmStart(pids[0], back); else back();
   };
 }

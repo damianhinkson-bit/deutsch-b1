@@ -59,6 +59,9 @@
   .pbar .o{background:var(--good)} .pbar .h{background:var(--amber)} .pbar .f{background:var(--bad)}
   .prow{display:block;width:100%;text-align:left;padding:12px 14px;border-bottom:1px solid var(--line)}
   .prow:last-child{border-bottom:none}
+  .prow-w{display:flex;align-items:stretch;border-bottom:1px solid var(--line)} .prow-w:last-child{border-bottom:none}
+  .prow-w .prow{border-bottom:none;flex:1;min-width:0}
+  .pdet{flex:0 0 46px;font-size:26px;font-weight:700;color:var(--muted);border-left:1px solid var(--line)}
   .prow .top{display:flex;justify-content:space-between;gap:10px;font-weight:800;font-size:15px}
   .prow .top span{color:var(--muted);font-size:13px;white-space:nowrap}
   .prow .sub{font-size:12.5px;color:var(--muted);margin-top:4px}
@@ -618,7 +621,7 @@ function atomsHub() {
   $("#drill").onclick = () => drillHub();
   $("#smHub").onclick = () => smHub();
   document.querySelectorAll(".boxes [data-box]").forEach(el => el.onclick = () => boxView(+el.dataset.box));
-  const w = $("#weak"); if (w) w.onclick = () => startPatPractice(weak.id);
+  const w = $("#weak"); if (w) w.onclick = () => patSmGo(weak.id, atomsHub);
   document.querySelectorAll("#mode button").forEach(b => b.onclick = () => { DB.atomMode = b.dataset.m; save(); document.querySelectorAll("#mode button").forEach(x => x.setAttribute("aria-pressed", x === b)); });
   $("#mPats").onclick = () => patsHub();
   const mEn = $("#mEn"); if (mEn) mEn.onclick = () => enFill();
@@ -669,12 +672,15 @@ function atomDetail(id, editing) {
 function patsHub() {
   recStop(); atomsReady();
   const pats = patsSorted();
-  const body = `<p class="muted" style="margin-top:4px">${L("Alle Fehlermuster aus allen Atomen. Grün = ohne Hilfe richtig, gelb = nur mit Hinweisen, rot = Fehler kam wieder. Die schwächsten stehen oben.", "All mistake patterns across all atoms. Green = right without help, amber = only with hints, red = the mistake came back. The weakest are at the top.")}</p>
-    ${pats.length ? `<div class="hl" style="padding:0">${pats.map(p => `<button class="prow" data-p="${p.id}"><div class="top"><b>${esc(p.label)}</b><span>${L(`${p.atoms} ${p.atoms === 1 ? "Atom" : "Atome"}`, `${p.atoms} ${p.atoms === 1 ? "atom" : "atoms"}`)}</span></div>${patBar(p)}<div class="sub">${patLine(p)}</div></button>`).join("")}</div>`
+  const body = `<p class="muted" style="margin-top:4px">${L("Tippe ein Muster an und übe es mit Satzmustern: Ein Teil wechselt, du sagst den ganzen Satz. Grün = richtig, gelb = nur mit Hilfe, rot = Fehler kam wieder. Die schwächsten stehen oben. › zeigt Details.", "Tap a pattern to practise it with swap drills: one part changes, you say the whole sentence. Green = right, amber = only with help, red = the mistake came back. The weakest are at the top. › shows details.")}</p>
+    ${pats.length ? `<div class="hl" style="padding:0">${pats.map(p => `<div class="prow-w"><button class="prow" data-p="${p.id}"><div class="top"><b>${esc(p.label)}</b><span>${patPm(p.id).length ? "⇄ " + L("üben", "practise") : L("Satzmuster holen", "get drills")}</span></div>${patBar(p)}<div class="sub">${patLine(p)} · ${L(`${p.atoms} ${p.atoms === 1 ? "Atom" : "Atome"}`, `${p.atoms} ${p.atoms === 1 ? "atom" : "atoms"}`)}</div></button><button class="pdet" data-pd="${p.id}" aria-label="${L("Details", "Details")}">›</button></div>`).join("")}</div>
+    ${patsWithoutSm().length > 1 ? `<button class="btn ghost" id="psAll" style="margin-top:10px">${L(`Satzmuster für ${Math.min(6, patsWithoutSm().length)} Fehlermuster auf einmal holen`, `Get swap drills for ${Math.min(6, patsWithoutSm().length)} mistake patterns at once`)}</button>` : ""}`
       : `<p class="empty">${L("Noch keine Muster. Sie kommen mit deinem ersten korrigierten Text.", "No patterns yet. They arrive with your first corrected text.")}</p>`}`;
   shell(L("Fehlermuster", "Mistake patterns"), body, { back: L("Atome", "Atoms"), backTo: "aktiv", redraw: patsHub });
   $("#back").onclick = () => atomsHub();
-  document.querySelectorAll("[data-p]").forEach(b => b.onclick = () => patDetail(b.dataset.p));
+  document.querySelectorAll("[data-p]").forEach(b => b.onclick = () => patSmGo(b.dataset.p, patsHub));
+  document.querySelectorAll("[data-pd]").forEach(b => b.onclick = () => patDetail(b.dataset.pd));
+  const pa = $("#psAll"); if (pa) pa.onclick = () => patSmFetch(patsWithoutSm().slice(0, 6), patsHub);
 }
 function patSentences(id) { const out = []; DB.atoms.forEach(a => a.sents.forEach((s, si) => { if (s.fp.includes(id)) out.push({ a, si }); })); return out; }
 function patDetail(id) {
@@ -683,7 +689,9 @@ function patDetail(id) {
   const st = Object.assign({ id, name: p.name }, patStats(id)), list = patSentences(id);
   const others = Object.keys(DB.pats).filter(x => x !== id).sort((a, b) => patName(a).localeCompare(patName(b), "de"));
   const body = `<div class="hl"><span class="lab">${L("Letzte 12 Versuche", "Last 12 attempts")}</span>${patBar(st)}<div class="sub muted small" style="margin-top:6px">${patLine(st)}</div></div>
-    <button class="btn primary" id="go" ${list.length ? "" : "disabled"}>${L(`Dieses Muster üben (${Math.min(list.length, 10)} Sätze)`, `Practise this pattern (${Math.min(list.length, 10)} sentences)`)}</button>
+    <button class="btn primary" id="smGo">${patPm(id).length ? L(`Mit Satzmustern üben (${patPm(id).length})`, `Practise with swap drills (${patPm(id).length})`) : L("Satzmuster von Claude holen", "Get swap drills from Claude")}</button>
+    ${patPm(id).length ? `<button class="btn ghost" id="smMoreP" style="margin-top:8px">${L("Mehr Satzmuster von Claude holen", "Get more swap drills from Claude")}</button>` : ""}
+    <button class="btn ghost" id="go" ${list.length ? "" : "disabled"} style="margin-top:8px">${L(`Deine Sätze wiederholen (${Math.min(list.length, 10)})`, `Review your sentences (${Math.min(list.length, 10)})`)}</button>
     <p class="muted small">${L("Freies Üben: zählt für dein Muster, ändert aber nicht die Boxen deiner Atome.", "Free practice: it counts for the pattern but doesn't change your atoms' boxes.")}</p>
     <div class="sec-h">${L("Sätze mit diesem Muster", "Sentences with this pattern")}</div>
     <div class="hl"><div class="slist">${list.map(x => `<div class="s"><div class="de"><span>${markedHtml(x.a.sents[x.si].de)}</span></div><div class="en">${esc(x.a.t)}</div></div>`).join("") || `<span class="muted small">${L("Keine.", "None.")}</span>`}</div></div>
@@ -694,8 +702,10 @@ function patDetail(id) {
   shell(patLabel(id), body, { back: L("Muster", "Patterns"), backTo: "aktiv", redraw: () => patDetail(id) });
   $("#back").onclick = () => patsHub();
   $("#go").onclick = () => startPatPractice(id);
+  $("#smGo").onclick = () => patSmGo(id, () => patDetail(id));
+  const smp = $("#smMoreP"); if (smp) smp.onclick = () => patSmFetch([id], () => patDetail(id));
   $("#pnS").onclick = () => { const v = $("#pnN").value.trim(); if (!v) return; const ex = patFind(v, true); if (ex && ex !== id) { toast(L("Diesen Namen gibt es schon. Nutze „Zusammenführen“.", "That name exists already. Use “Merge”.")); return; } p.name = v; save(); toast(L("Umbenannt", "Renamed")); patDetail(id); };
-  const g = $("#pnG"); if (g) g.onclick = () => { const into = $("#pnM").value; if (!DB.pats[into]) return; DB.pats[into].ev = DB.pats[into].ev.concat(p.ev).sort((x, y) => x.d < y.d ? -1 : 1).slice(-200); DB.atoms.forEach(a => a.sents.forEach(s => { if (s.fp.includes(id)) s.fp = [...new Set(s.fp.map(x => x === id ? into : x))]; })); delete DB.pats[id]; save(); toast(L("Zusammengeführt", "Merged")); patDetail(into); };
+  const g = $("#pnG"); if (g) g.onclick = () => { const into = $("#pnM").value; if (!DB.pats[into]) return; DB.pats[into].ev = DB.pats[into].ev.concat(p.ev).sort((x, y) => x.d < y.d ? -1 : 1).slice(-200); if ((p.pm || []).length) DB.pats[into].pm = (DB.pats[into].pm || []).concat(p.pm); DB.atoms.forEach(a => a.sents.forEach(s => { if (s.fp.includes(id)) s.fp = [...new Set(s.fp.map(x => x === id ? into : x))]; })); delete DB.pats[id]; save(); toast(L("Zusammengeführt", "Merged")); patDetail(into); };
   let armed = false;
   $("#pnD").onclick = e => { if (!armed) { armed = true; e.target.textContent = L("Nochmal tippen zum Löschen", "Tap again to delete"); e.target.classList.add("bad"); return; } DB.atoms.forEach(a => a.sents.forEach(s => s.fp = s.fp.filter(x => x !== id))); delete DB.pats[id]; save(); toast(L("Gelöscht", "Deleted")); patsHub(); };
 }
