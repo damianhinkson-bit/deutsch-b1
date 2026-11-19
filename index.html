@@ -295,8 +295,13 @@ function grade(id,okFirst){
   const c=DB.cards[id]; if(!c) return;
   if(okFirst){ c.lv=Math.min(5,c.lv+1); c.ok++; } else { c.lv=c.lv>2?1:Math.max(0,c.lv-1); c.bad++; }
   c.due = c.lv===0 ? today() : addDays(today(), INTERVAL[Math.max(1,c.lv)]);
+  logDay("wr"); if(okFirst) logDay("wo"); snapSecure();
   touchStreak(); save();
 }
+/* daily activity log for the weekly dashboard: DB.log[day] = { wr word reviews, wo right first time, ar atom sentences rated, ao rated OK/Easy, sec words secure (lv 4-5, all levels) } */
+function logDay(k,n){ const d=today(); if(!DB.log||typeof DB.log!=="object") DB.log={}; const o=DB.log[d]||(DB.log[d]={}); o[k]=(o[k]||0)+(n==null?1:n); const ks=Object.keys(DB.log); if(ks.length>140) ks.sort().slice(0,ks.length-140).forEach(x=>delete DB.log[x]); }
+function secureAll(){ let n=0; for(const id in DB.cards) if(DB.cards[id].lv>=4) n++; return n; }
+function snapSecure(){ if(!DB.log||typeof DB.log!=="object") DB.log={}; const d=today(); (DB.log[d]||(DB.log[d]={})).sec=secureAll(); }
 function touchStreak(){const t=today(); if(DB.streak.last===t) return; DB.streak.n = DB.streak.last===addDays(t,-1) ? DB.streak.n+1 : 1; DB.streak.last=t;}
 function introducedSince(day){ return Object.keys(DB.cards).filter(id=>DB.cards[id].d>=day&&BY[id]&&BY[id].lvl===DB.level).map(Number); }
 function counts(){let started=0,mastered=0;for(const id in DB.cards){ if(!BY[id]||BY[id].lvl!==DB.level) continue; started++; if(DB.cards[id].lv>=4) mastered++;}return {started,mastered};}
@@ -398,12 +403,32 @@ const TABS=[["home",()=>L("Heute","Today"),'<path d="M3 11 12 4l9 7"/><path d="M
 function renderTabs(){ const cur=TAB_OF[route]||route; $("#tabs").innerHTML=TABS.map(([r,l,p])=>`<button class="tab" data-tab="${r}" ${cur===r?'aria-current="page"':""}><svg viewBox="0 0 24 24">${p}</svg>${l()}</button>`).join(""); }
 document.addEventListener("click",e=>{const t=e.target.closest("[data-tab]"); if(t){ go(t.dataset.tab);} });
 const TAB_OF={liste:"ueben"};
-function go(r){route=r;session=null;hush();if(typeof recStop==="function")recStop();renderTabs();({home:home,ueben:ueben,liste:liste,mehr:mehr,aktiv:aktiv,gram:gram})[r]();window.scrollTo(0,0);}
+function go(r){route=r;session=null;hush();if(typeof recStop==="function")recStop();renderTabs();({home:home,ueben:ueben,liste:liste,mehr:mehr,aktiv:aktiv,gram:gram})[r]();window.scrollTo(0,0);syncGuard();}
+/* Android back: one extra history entry (the guard) sits on top whenever we're not on Today.
+   Back pops it: we press the screen's own ‹ button (or go to Today), and put the guard back.
+   On Today there is no guard, so back closes the app. */
+let backGuard=!!(history.state&&history.state.bg), skipPop=0;
+function syncGuard(){
+  const needs = route!=="home" || !!document.getElementById("back");
+  try{
+    if(needs&&!backGuard){ history.pushState({bg:1},""); backGuard=true; }
+    else if(!needs&&backGuard){ backGuard=false; skipPop++; history.back(); }
+  }catch(e){}
+}
+window.addEventListener("popstate",()=>{
+  if(skipPop){ skipPop--; return; }
+  backGuard=!!(history.state&&history.state.bg);
+  if(backGuard) return; // a page inside the grammar trainer went back
+  const b=document.getElementById("back");
+  if(b) b.click(); else if(route!=="home") go("home");
+  setTimeout(syncGuard,0);
+});
 function shell(title,body,opts={}){
   document.body.classList.remove("gram-on");
   $("#app").innerHTML=`<header class="hdr">${opts.back?`<button class="back" id="back">‹ ${esc(opts.back)}</button>`:""}<h1>${esc(title)}</h1>${opts.right?`<span class="right">${opts.right}</span>`:""}${opts.back||opts.noLevel?"":`<span class="lvlbtn" role="group" aria-label="${L("Stufe","Level")}">${LEVELS.map(l=>`<b data-lvl="${l}" class="${DB.level===l?"on":""}">${l}</b>`).join("")}</span>`}<button class="langbtn" id="langBtn" aria-label="${L("Sprache der App wechseln","Switch app language")}"><b class="${EN()?"":"on"}">DE</b><b class="${EN()?"on":""}">EN</b></button></header><main class="view">${persistOK?"":`<div class="warn">${L("Dein Fortschritt kann in diesem Browser nicht gespeichert werden. Er geht verloren, wenn du die Seite schließt.","Your progress can't be saved in this browser. It will be lost when you close the page.")}</div>`}${body}</main>`;
   if(opts.back) $("#back").onclick=()=>go(opts.backTo||route);
   redraw=opts.redraw||null;
+  setTimeout(syncGuard,0);
   document.querySelectorAll("[data-lvl]").forEach(b=>b.onclick=()=>{ if(b.dataset.lvl===DB.level) return; setLevel(b.dataset.lvl); pr.theme="all"; listTheme="all"; session=null; hush(); go(route==="liste"||route==="ueben"||route==="mehr"?route:"home"); toast(`${b.dataset.lvl} · ${LW().length} ${L("Wörter","words")}`); });
   $("#langBtn").onclick=()=>{ DB.lang=EN()?"de":"en"; save(); renderTabs(); if(redraw) redraw(); else go(route); toast(L("App auf Deutsch","App in English")); };
 }
@@ -430,14 +455,13 @@ function home(){
     : L("Tagesziel geschafft. Du kannst trotzdem weitermachen: ","Daily goal reached. You can keep going: ")+esc(preview)+"…";
   const body=`
    <div class="date">${esc(dateTxt)}</div>
+   ${typeof weekCard==="function"?weekCard():""}
    <button class="row-sw" id="shkSw" aria-pressed="${shkOn()}" style="margin:0 0 4px"><span class="tx"><b>${L("Handwerker-Modus (SHK)","Handyman mode (SHK)")}</b><span class="muted small">${shkOn()?L("An: Wärmepumpe, Heizung, Klima, Wasser. Jedes 3. neue Wort, Sprechen und Claude aus deinem Beruf.","On: heat pumps, heating, AC, water. Every 3rd new word, speaking and Claude from your trade."):L("Wärmepumpe, Heizung, Klima, Wasser: Wörter, Sprechen und Grammatik aus deinem Beruf.","Heat pumps, heating, AC, water: words, speaking and grammar from your trade.")}</span></span><span class="sw ${shkOn()?"on":""}"><i></i></span></button>
    <button class="hero alt" id="goNew" ${nextIds.length?"":"disabled"}><span class="ic">${left||"+"+PACK}</span><span><span class="tt">${left?L("Neue Wörter","New words"):L("Mehr neue Wörter","More new words")}</span><span class="ss">${newSub}</span></span></button>
-   <div class="pick-l">${L("Neue Wörter heute aus","Today's new words from")}</div>
-   <div class="chips" id="pickRow"><button class="chip" data-pick="" aria-pressed="${!PICK()}">${L("Automatisch","Automatic")}</button>${levelThemes().map(t=>{const n=themeLeft(t);return n?`<button class="chip" data-pick="${t}" aria-pressed="${PICK()===t}">${esc(THEME(t))} · ${n}</button>`:"";}).join("")}</div>
+   ${PICK()?`<p class="muted small" style="margin:6px 2px 0">${L("Neue Wörter heute aus: ","Today's new words from: ")}<b>${esc(THEME(PICK()))}</b> · ${L("ändern in Mehr","change in More")}</p>`:""}
    ${introducedSince(today()).length?`<button class="hero ghosty" id="drillT"><span class="ic">${introducedSince(today()).length}</span><span><span class="tt">${L("Heutige neue Wörter üben","Drill today's new words")}</span><span class="ss">${L("In jeder Art: Paare, Hören, Artikel, Schreiben, Verstehen.","Every way: pairs, listening, articles, writing, meaning.")}</span></span></button>`:""}
    ${aktivHome()}
-   <button class="row-sw" id="pauseSw" aria-pressed="${DB.pause}"><span class="tx"><b>${L("Neue Wörter pausieren","Pause new words")}</b><span class="muted small">${L("Keine neuen Wörter, bis du es wieder einschaltest.","No new words until you switch it back on.")}</span></span><span class="sw ${DB.pause?"on":""}"><i></i></span></button>
-   ${TTS?`<button class="row-sw" id="sndTest"><span class="tx"><b>${L("Ton testen","Test sound")}</b><span class="muted small">${L("Tippe hier. Du solltest „Guten Morgen“ hören.","Tap here. You should hear “Guten Morgen”.")}</span></span><span class="spk">${ICON.spk}</span></button>`:`<div class="tts-note">${L("Ton ist in dieser Ansicht nicht verfügbar. Öffne die App in Chrome, dann funktionieren Vorlesen und Hören.","Sound isn't available in this view. Open the app in Chrome and reading aloud will work.")}</div>`}
+   <div class="row2 shortcuts"><button class="btn petrol" id="scMix">✦ ${L("Atome gemischt","Atoms: mixed")}</button><button class="btn petrol" id="scGram">${L("Grammatik","Grammar")}</button></div>
    <div class="strip"><div><b>${started}</b><span>${L("von","of")} ${LW().length} ${L("begonnen","started")}</span></div><div><b>${mastered}</b><span>${L("sicher (Stufe 4–5)","secure (level 4–5)")}</span></div><div><b>${DB.streak.last===today()||DB.streak.last===addDays(today(),-1)?DB.streak.n:0}</b><span>${L("Tage am Stück","days in a row")}</span></div></div>
    <div class="h2">${L("Tag","Day")} ${Math.min(dayNo,totalDays)} ${L("von","of")} ${totalDays} · ${L("Themen","Themes")}</div>
    <div>${themeOrder(DB.level).concat(["klein"]).map(t=>{const p=themeProgress(t);return p.n?meterRow(t,p):"";}).join("")}</div>
@@ -447,15 +471,14 @@ function home(){
   $("#goNew").onclick=()=>startNew();
   const dt=$("#drillT"); if(dt) dt.onclick=drillToday;
   bindAktivHome();
-  $("#pauseSw").onclick=()=>{DB.pause=!DB.pause;save();home();};
+  if(typeof bindWeekCard==="function") bindWeekCard();
+  $("#scMix").onclick=()=>{ route="aktiv"; renderTabs(); drillHub(); syncGuard(); };
+  $("#scGram").onclick=()=>go("gram");
   $("#shkSw").onclick=()=>{DB.shk=!DB.shk;save();toast(DB.shk?L("Handwerker-Modus an","Handyman mode on"):L("Handwerker-Modus aus","Handyman mode off"));home();};
-  const st=$("#sndTest"); if(st) st.onclick=()=>{ if(!say("Guten Morgen")) toast(NO_SOUND()); };
   document.querySelectorAll("[data-theme-open]").forEach(b=>b.onclick=()=>{listTheme=b.dataset.themeOpen;go("liste");});
-  document.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ const t=b.dataset.pick; if(t) DB.pick[DB.level]=t; else delete DB.pick[DB.level]; save(); home(); });
   document.querySelectorAll("[data-mv]").forEach(b=>b.onclick=()=>{ const sc=$("#app").scrollTop, wy=window.scrollY; moveTheme(b.dataset.t,+b.dataset.mv); home(); $("#app").scrollTop=sc; window.scrollTo(0,wy); });
   $("#ordBtn").onclick=()=>{ editOrder=!editOrder; home(); };
   const orr=$("#ordReset"); if(orr) orr.onclick=()=>{ resetOrder(); home(); };
-  const pk=$("#pickRow [aria-pressed=\"true\"]"), pr0=$("#pickRow"); if(pk&&pr0) pr0.scrollLeft=Math.max(0,pk.offsetLeft-pr0.offsetLeft-(pr0.clientWidth-pk.offsetWidth)/2);
 }
 let editOrder=false;
 function meterRow(t,p){const ms=p.n?100*p.m/p.n:0, ss=p.n?100*(p.s-p.m)/p.n:0;
@@ -716,10 +739,16 @@ function mehr(){
    <div class="h2">${L("Sprache der App","App language")}</div>
    <div class="ctl"><div class="ctl-t"><b>${L("Knöpfe und Anleitungen","Buttons and instructions")}</b><span class="muted small">${L("Die Wörter, die du lernst, bleiben immer Deutsch.","The words you're learning always stay German.")}</span></div>
    <div class="seg" role="group"><button data-lang="de" aria-pressed="${!EN()}">Deutsch</button><button data-lang="en" aria-pressed="${EN()}">English</button></div></div>
+   <div class="h2">${L("Neue Wörter","New words")} (${LV()})</div>
+   <div class="pick-l" style="margin-top:0">${L("Neue Wörter heute aus","Today's new words from")}</div>
+   <div class="chips" id="pickRow"><button class="chip" data-pick="" aria-pressed="${!PICK()}">${L("Automatisch","Automatic")}</button>${levelThemes().map(t=>{const n=themeLeft(t);return n?`<button class="chip" data-pick="${t}" aria-pressed="${PICK()===t}">${esc(THEME(t))} · ${n}</button>`:"";}).join("")}</div>
+   <button class="row-sw" id="pauseSw" aria-pressed="${DB.pause}"><span class="tx"><b>${L("Neue Wörter pausieren","Pause new words")}</b><span class="muted small">${L("Keine neuen Wörter, bis du es wieder einschaltest.","No new words until you switch it back on.")}</span></span><span class="sw ${DB.pause?"on":""}"><i></i></span></button>
+   <div class="h2">${L("Erinnerung","Reminder")}</div>${typeof remindCtl==="function"?remindCtl():""}
    <div class="h2">${L("Fehler","Mistakes")}</div>${missLevelCtl()}
    <p class="muted small">${missCount()} ${L("Wörter mit Fehlern gemerkt. Jede richtige Antwort baut einen Fehler wieder ab.","words with mistakes remembered. Each right answer removes one again.")}</p>
    ${missCount()?`<button class="btn ghost" id="clrMiss">${L("Gemerkte Fehler löschen","Clear remembered mistakes")}</button>`:""}
    <div class="h2">${L("Ton","Sound")}</div>${sayToggle()}
+   ${TTS?`<button class="row-sw" id="sndTest"><span class="tx"><b>${L("Ton testen","Test sound")}</b><span class="muted small">${L("Tippe hier. Du solltest „Guten Morgen“ hören.","Tap here. You should hear “Guten Morgen”.")}</span></span><span class="spk">${ICON.spk}</span></button>`:`<div class="tts-note">${L("Ton ist in dieser Ansicht nicht verfügbar. Öffne die App in Chrome, dann funktionieren Vorlesen und Hören.","Sound isn't available in this view. Open the app in Chrome and reading aloud will work.")}</div>`}
    <div class="h2">${L("So funktioniert's","How it works")}</div>
    <div class="menu">
     <div class="item"><span class="ic">60</span><span class="tx"><span class="tt">${L("Neue Wörter pro Tag","New words per day")}</span><span class="ss">${L(`${PER_DAY} als Tagesziel, in Päckchen zu ${PACK}. Du kannst jederzeit mehr lernen.`,`${PER_DAY} as a daily goal, in packs of ${PACK}. You can always learn more.`)}</span></span></div>
@@ -736,6 +765,11 @@ function mehr(){
    <div class="h2">${L("Zurücksetzen","Reset")}</div>
    <button class="btn ghost" id="reset">${L("Allen Fortschritt löschen","Delete all progress")}</button>`;
   shell(L("Mehr","More"),body,{redraw:mehr}); bindSayToggle(); bindMissLevel(mehr); bindFotoBackup();
+  if(typeof bindRemind==="function") bindRemind(mehr);
+  $("#pauseSw").onclick=()=>{DB.pause=!DB.pause;save();mehr();};
+  const st=$("#sndTest"); if(st) st.onclick=()=>{ if(!say("Guten Morgen")) toast(NO_SOUND()); };
+  document.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ const t=b.dataset.pick; if(t) DB.pick[DB.level]=t; else delete DB.pick[DB.level]; save(); const sy=window.scrollY; mehr(); window.scrollTo(0,sy); });
+  const pk=$("#pickRow [aria-pressed=\"true\"]"), pr0=$("#pickRow"); if(pk&&pr0) pr0.scrollLeft=Math.max(0,pk.offsetLeft-pr0.offsetLeft-(pr0.clientWidth-pk.offsetWidth)/2);
   document.querySelectorAll("[data-lang]").forEach(b=>b.onclick=()=>{ DB.lang=b.dataset.lang; save(); renderTabs(); mehr(); });
   const cm=$("#clrMiss"); if(cm) cm.onclick=()=>{ DB.miss={}; save(); toast(L("Fehler gelöscht","Mistakes cleared")); mehr(); };
   $("#copy").onclick=()=>{const t=$("#exp");const v=t.value;const fall=()=>{t.focus();t.select();toast(L("Code markiert. Jetzt kopieren.","Code selected. Copy it now."));};try{navigator.clipboard.writeText(v).then(()=>toast(L("Code kopiert","Code copied")),fall);}catch(e){fall();}};
@@ -754,7 +788,8 @@ function mehr(){
 <script src="tts-mp3.js"></script>
 <script src="bilder.js"></script>
 <script src="fotos.js"></script>
-<script>renderTabs(); go("home");</script>
+<script src="dashboard.js"></script>
+<script>renderTabs(); go("home"); try{ if(/[?&]go=atoms\b/.test(location.search)){ history.replaceState(history.state,"",location.pathname); route="aktiv"; renderTabs(); atomsHub(); } }catch(e){}</script>
 
 <script>
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{});});}

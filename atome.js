@@ -856,8 +856,10 @@ function finishAtom(a) {
     const target = g === 1 ? 1 : g === 2 ? b : b + 1;
     x.last = g; place(x, target);
     if (g === 3) good++;
+    if (typeof logDay === "function") { logDay("ar"); if (g >= 2) logDay("ao"); }
   });
   admitWaiting(); DB.atoms.forEach(syncAtom);
+  if (typeof remindSync === "function") remindSync();
   a.hist.push({ d: today(), b: old, ok: good, n });
   save();
   toast(a.done ? L("Atom abgeschlossen! 🎉", "Atom graduated! 🎉") : L(`${a.t}: gespeichert · nächste ${fmtDay(a.due)}`, `${a.t}: saved · next ${fmtDay(a.due)}`));
