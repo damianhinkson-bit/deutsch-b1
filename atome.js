@@ -598,7 +598,7 @@ function atomsHub() {
     <button class="hero" id="rev" ${dueN ? "" : "disabled"}><span class="ic">${dueN}</span><span><span class="tt">${L("Wiederholen", "Review")}</span><span class="ss">${dueN ? L(`${dueN} Sätze aus ${due.length} Atomen.`, `${dueN} sentences from ${due.length} atoms.`) : L("Heute ist nichts fällig.", "Nothing is due today.")}</span></span></button>
     <button class="hero alt" id="drill"><span class="ic">✦</span><span><span class="tt">${L("Gemischt üben", "Mixed practice")}</span><span class="ss">${L("Lücke, Auswahl, Satzbau, Umformen mit deinen Sätzen", "Gap, choice, word order and transform with your sentences")}</span></span></button>
     <button class="hero ghosty" id="smHub"><span class="ic">⇄</span><span><span class="tt">${L("Satzmuster", "Pattern drills")}</span><span class="ss">${smCount() ? L(`${smCount()} Muster: ein Teil wechselt, du sagst den ganzen Satz`, `${smCount()} patterns: one part changes, you say the whole sentence`) : L("Ein Teil wechselt, du sagst den ganzen Satz", "One part changes, you say the whole sentence")}</span></span></button>
-    ${weak ? `<button class="hero alt" id="weak"><span class="ic">!</span><span><span class="tt">${L("Schwächstes Muster üben", "Practise your weakest pattern")}</span><span class="ss">${esc(weak.label)} · ${Math.round(weak.score * 100)} %</span></span></button>` : ""}
+    ${weak ? `<button class="hero alt" id="weak"><span class="ic">!</span><span><span class="tt">${L("Fehler-Drill: schwächstes Muster", "Mistake drill: weakest pattern")}</span><span class="ss">${esc(weak.label)} · ${Math.round(weak.score * 100)} %</span></span></button>` : ""}
     <div class="seg" id="mode"><button data-m="satz" aria-pressed="${DB.atomMode === "satz"}">${L("Satz für Satz", "Sentence by sentence")}</button><button data-m="text" aria-pressed="${DB.atomMode === "text"}">${L("Ganzer Text", "Whole text")}</button></div>
     <div class="menu" style="margin-top:12px">
       ${missingEn().n ? `<button class="item" id="mEn"><span class="ic">EN</span><span class="tx"><span class="tt">${L("Englisch ergänzen", "Add the English")}</span><span class="ss">${L(`${missingEn().n} Sätze oder Muster ohne Englisch`, `${missingEn().n} sentences or patterns have no English`)}</span></span></button>` : ""}
@@ -618,7 +618,7 @@ function atomsHub() {
   $("#drill").onclick = () => drillHub();
   $("#smHub").onclick = () => smHub();
   document.querySelectorAll(".boxes [data-box]").forEach(el => el.onclick = () => boxView(+el.dataset.box));
-  const w = $("#weak"); if (w) w.onclick = () => startPatPractice(weak.id);
+  const w = $("#weak"); if (w) w.onclick = () => typeof fdStart === "function" ? fdStart(weak.id, atomsHub) : startPatPractice(weak.id);
   document.querySelectorAll("#mode button").forEach(b => b.onclick = () => { DB.atomMode = b.dataset.m; save(); document.querySelectorAll("#mode button").forEach(x => x.setAttribute("aria-pressed", x === b)); });
   $("#mPats").onclick = () => patsHub();
   const mEn = $("#mEn"); if (mEn) mEn.onclick = () => enFill();
@@ -683,8 +683,8 @@ function patDetail(id) {
   const st = Object.assign({ id, name: p.name }, patStats(id)), list = patSentences(id);
   const others = Object.keys(DB.pats).filter(x => x !== id).sort((a, b) => patName(a).localeCompare(patName(b), "de"));
   const body = `<div class="hl"><span class="lab">${L("Letzte 12 Versuche", "Last 12 attempts")}</span>${patBar(st)}<div class="sub muted small" style="margin-top:6px">${patLine(st)}</div></div>
-    <button class="btn primary" id="go" ${list.length ? "" : "disabled"}>${L(`Dieses Muster üben (${Math.min(list.length, 10)} Sätze)`, `Practise this pattern (${Math.min(list.length, 10)} sentences)`)}</button>
-    <p class="muted small">${L("Freies Üben: zählt für dein Muster, ändert aber nicht die Boxen deiner Atome.", "Free practice: it counts for the pattern but doesn't change your atoms' boxes.")}</p>
+    <div id="fdHost"></div>
+    <button class="btn ghost" id="go" ${list.length ? "" : "disabled"} style="margin-top:8px">${L(`Nur deine Sätze wiederholen (${Math.min(list.length, 10)})`, `Review only your sentences (${Math.min(list.length, 10)})`)}</button>
     <div class="sec-h">${L("Sätze mit diesem Muster", "Sentences with this pattern")}</div>
     <div class="hl"><div class="slist">${list.map(x => `<div class="s"><div class="de"><span>${markedHtml(x.a.sents[x.si].de)}</span></div><div class="en">${esc(x.a.t)}</div></div>`).join("") || `<span class="muted small">${L("Keine.", "None.")}</span>`}</div></div>
     <details class="fold"><summary>${L("Umbenennen oder zusammenführen", "Rename or merge")}</summary><div class="in">
@@ -694,6 +694,7 @@ function patDetail(id) {
   shell(patLabel(id), body, { back: L("Muster", "Patterns"), backTo: "aktiv", redraw: () => patDetail(id) });
   $("#back").onclick = () => patsHub();
   $("#go").onclick = () => startPatPractice(id);
+  if (typeof fdPatBlock === "function") fdPatBlock($("#fdHost"), id);
   $("#pnS").onclick = () => { const v = $("#pnN").value.trim(); if (!v) return; const ex = patFind(v, true); if (ex && ex !== id) { toast(L("Diesen Namen gibt es schon. Nutze „Zusammenführen“.", "That name exists already. Use “Merge”.")); return; } p.name = v; save(); toast(L("Umbenannt", "Renamed")); patDetail(id); };
   const g = $("#pnG"); if (g) g.onclick = () => { const into = $("#pnM").value; if (!DB.pats[into]) return; DB.pats[into].ev = DB.pats[into].ev.concat(p.ev).sort((x, y) => x.d < y.d ? -1 : 1).slice(-200); DB.atoms.forEach(a => a.sents.forEach(s => { if (s.fp.includes(id)) s.fp = [...new Set(s.fp.map(x => x === id ? into : x))]; })); delete DB.pats[id]; save(); toast(L("Zusammengeführt", "Merged")); patDetail(into); };
   let armed = false;

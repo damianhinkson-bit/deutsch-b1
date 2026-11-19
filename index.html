@@ -436,6 +436,7 @@ function home(){
    <div class="chips" id="pickRow"><button class="chip" data-pick="" aria-pressed="${!PICK()}">${L("Automatisch","Automatic")}</button>${levelThemes().map(t=>{const n=themeLeft(t);return n?`<button class="chip" data-pick="${t}" aria-pressed="${PICK()===t}">${esc(THEME(t))} · ${n}</button>`:"";}).join("")}</div>
    ${introducedSince(today()).length?`<button class="hero ghosty" id="drillT"><span class="ic">${introducedSince(today()).length}</span><span><span class="tt">${L("Heutige neue Wörter üben","Drill today's new words")}</span><span class="ss">${L("In jeder Art: Paare, Hören, Artikel, Schreiben, Verstehen.","Every way: pairs, listening, articles, writing, meaning.")}</span></span></button>`:""}
    ${aktivHome()}
+   ${typeof fdHome==="function"?fdHome():""}
    <button class="row-sw" id="pauseSw" aria-pressed="${DB.pause}"><span class="tx"><b>${L("Neue Wörter pausieren","Pause new words")}</b><span class="muted small">${L("Keine neuen Wörter, bis du es wieder einschaltest.","No new words until you switch it back on.")}</span></span><span class="sw ${DB.pause?"on":""}"><i></i></span></button>
    ${TTS?`<button class="row-sw" id="sndTest"><span class="tx"><b>${L("Ton testen","Test sound")}</b><span class="muted small">${L("Tippe hier. Du solltest „Guten Morgen“ hören.","Tap here. You should hear “Guten Morgen”.")}</span></span><span class="spk">${ICON.spk}</span></button>`:`<div class="tts-note">${L("Ton ist in dieser Ansicht nicht verfügbar. Öffne die App in Chrome, dann funktionieren Vorlesen und Hören.","Sound isn't available in this view. Open the app in Chrome and reading aloud will work.")}</div>`}
    <div class="strip"><div><b>${started}</b><span>${L("von","of")} ${LW().length} ${L("begonnen","started")}</span></div><div><b>${mastered}</b><span>${L("sicher (Stufe 4–5)","secure (level 4–5)")}</span></div><div><b>${DB.streak.last===today()||DB.streak.last===addDays(today(),-1)?DB.streak.n:0}</b><span>${L("Tage am Stück","days in a row")}</span></div></div>
@@ -447,6 +448,7 @@ function home(){
   $("#goNew").onclick=()=>startNew();
   const dt=$("#drillT"); if(dt) dt.onclick=drillToday;
   bindAktivHome();
+  if(typeof bindFdHome==="function") bindFdHome();
   $("#pauseSw").onclick=()=>{DB.pause=!DB.pause;save();home();};
   $("#shkSw").onclick=()=>{DB.shk=!DB.shk;save();toast(DB.shk?L("Handwerker-Modus an","Handyman mode on"):L("Handwerker-Modus aus","Handyman mode off"));home();};
   const st=$("#sndTest"); if(st) st.onclick=()=>{ if(!say("Guten Morgen")) toast(NO_SOUND()); };
@@ -749,6 +751,8 @@ function mehr(){
 <script src="aktiv.js"></script>
 <script src="atome.js"></script>
 <script src="satzmuster.js"></script>
+<script src="fehlerdrill-data.js"></script>
+<script src="fehlerdrill.js"></script>
 <script src="fluency-data.js"></script>
 <script src="fluency.js"></script>
 <script src="tts-mp3.js"></script>
