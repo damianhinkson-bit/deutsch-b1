@@ -464,27 +464,41 @@ function savedNote(host, a) {
   $("#toAtoms").onclick = () => atomsHub();
 }
 
+/* turn the B1 version into the atom: its sentences replace the old ones and start fresh in box 1.
+   They wait for Claude (English, keywords, patterns …) before they come up in reviews. */
+function promoteUp(a) {
+  const de = splitSents(a.up || "");
+  if (!de.length) return false;
+  a.upPats = [...new Set(atomPats(a).map(patName).filter(Boolean).concat(a.upPats || []))];
+  a.sents = de.map(d => { const x = { de: d, en: "", kw: "", fp: [], box: 0, due: "", last: 0, wait: true, pend: plain(d) }; if (a.paused) x.paused = true; return x; });
+  a.corr = de.map(plain).join(" ");
+  a.up = ""; a.upOld = false; a.tr = []; a.pm = []; a.fromUp = true; a.done = false;
+  admitWaiting(); DB.atoms.forEach(syncAtom); save();
+  return true;
+}
 function pendingOf(a) { return a.sents.map((s, i) => i).filter(i => a.sents[i].pend); }
 function checkOf(a) { return a.sents.map((s, i) => i).filter(i => a.sents[i].pend || a.sents[i].chk); }
 function needsClaude(a) { return checkOf(a).length > 0 || !!a.upOld; }
 function fixPrompt(a) {
   const todo = checkOf(a), known = patsSorted().map(p => p.name).filter(Boolean).slice(0, 25), P = [];
   P.push(`Ich arbeite an meinem deutschen Text „${a.t}“ (Ziel B1). Bitte bring alles zu diesem Text auf den neuesten Stand.`);
-  if (todo.length) P.push("Prüf die markierten Sätze und schreib jeden richtig auf Deutsch, so nah wie möglich an meiner Version. Bei „Ich meinte“ musstest du vorher raten: schreib, was ich wirklich sagen wollte. Sätze ohne Markierung bleiben genau so.");
+  if (a.fromUp) P.push("Diese Sätze waren die B1-Version meines alten Texts und sind jetzt mein neuer Text. Lass sie genau so und korrigiere nur echte Fehler. Gib zu jedem Satz die englische Bedeutung und Stichwörter.");
+  else if (todo.length) P.push("Prüf die markierten Sätze und schreib jeden richtig auf Deutsch, so nah wie möglich an meiner Version. Bei „Ich meinte“ musstest du vorher raten: schreib, was ich wirklich sagen wollte. Sätze ohne Markierung bleiben genau so.");
   else P.push("Die Sätze bleiben genau so. Erstelle alles andere passend zu diesen Sätzen neu.");
   P.push("", "Mein ganzer Text im Moment:");
-  a.sents.forEach((x, i) => P.push(`${i + 1}. ${x.pend ? `Geraten: ${plain(x.de)} — Ich meinte: ${x.pend}` : x.chk ? `Von mir geändert: ${plain(x.de)}` : plain(x.de)}`));
+  a.sents.forEach((x, i) => P.push(`${i + 1}. ${a.fromUp ? plain(x.de) : x.pend ? `Geraten: ${plain(x.de)} — Ich meinte: ${x.pend}` : x.chk ? `Von mir geändert: ${plain(x.de)}` : plain(x.de)}`));
   P.push("");
   if ((a.orig || "").trim()) P.push("Was ich ursprünglich geschrieben oder gesagt habe (für meine echten Fehler):", a.orig.trim(), "");
   const old = atomPats(a).map(id => `${patName(id)} (Sätze ${a.sents.map((x, i) => x.fp.includes(id) ? i + 1 : 0).filter(Boolean).join(", ")})`);
   if (old.length) P.push("Bisherige Fehlermuster (behalte nur, was noch stimmt): " + old.join("; "), "");
+  if (a.fromUp && (a.upPats || []).length) P.push("Fehlermuster aus meinem alten Text (ordne sie den neuen Sätzen zu, wo diese Grammatik vorkommt): " + a.upPats.join("; "), "");
   if (known.length) P.push("Meine bekannten Fehlermuster (benutze genau diese Namen, wenn eins passt): " + known.join("; "), "");
   if (shkLine()) P.push(shkLine(), "");
   P.push("Antworte am Ende mit genau diesen Blöcken, in dieser Reihenfolge und ohne Text danach:");
   P.push("SÄTZE:", "1. (Satz, korrigierte Stellen in [eckigen Klammern]) | (englische Bedeutung) | (2–4 Stichwörter in der Grundform, ohne die korrigierten Stellen)", `(genau ${a.sents.length} Zeilen, gleiche Nummern und Reihenfolge wie oben)`);
   P.push("FEHLERMUSTER:", "- (ein Muster pro Zeile: deutscher Name | englischer Name (Satznummern))");
   P.push("UMFORMEN:", "- (3 kurze Aufgaben zum Umformen für spätere Wiederholungen, passend zu den neuen Sätzen)");
-  P.push("B1-VERSION:", "(der ganze Text mit den neuen Sätzen, eine Stufe besser, natürlich und auf B1-Niveau)");
+  P.push("B1-VERSION:", a.fromUp ? "(der ganze Text noch eine Stufe höher: natürlich, gutes B1, gern mit etwas reicheren Verbindungen und Wörtern)" : "(der ganze Text mit den neuen Sätzen, eine Stufe besser, natürlich und auf B1-Niveau)");
   satzmusterPromptLines(P);
   return P.join("\n");
 }
@@ -499,7 +513,8 @@ function fixBlock(host, a, after, opt) {
     return;
   }
   const rest = L("Claude bringt auch Fehlermuster, Umformen, B1-Version und Satzmuster auf den neuesten Stand, in einem Schritt.", "Claude also updates the mistake patterns, Umformen, B1 version and pattern drills, in one step.");
-  const what = pend.length ? L(`${pend.length === 1 ? "1 geratener Satz wartet" : pend.length + " geratene Sätze warten"} auf Claude. Bis dahin kommen sie nicht in deine Wiederholung.`, `${pend.length === 1 ? "1 guessed sentence is" : pend.length + " guessed sentences are"} waiting for Claude. Until then they stay out of your reviews.`) + " " + rest
+  const what = a.fromUp ? L("Deine B1-Version ist jetzt das Atom. Claude gibt dazu Englisch, Stichwörter, Fehlermuster, Umformen, eine neue B1-Version (noch eine Stufe höher) und Satzmuster, in einem Schritt. Bis dahin kommen die neuen Sätze nicht in deine Wiederholung.", "Your B1 version is now the atom. Claude adds the English, keywords, mistake patterns, Umformen, a new B1 version (one more step up) and pattern drills, in one step. Until then the new sentences stay out of your reviews.")
+    : pend.length ? L(`${pend.length === 1 ? "1 geratener Satz wartet" : pend.length + " geratene Sätze warten"} auf Claude. Bis dahin kommen sie nicht in deine Wiederholung.`, `${pend.length === 1 ? "1 guessed sentence is" : pend.length + " guessed sentences are"} waiting for Claude. Until then they stay out of your reviews.`) + " " + rest
     : todo.length ? L(`Du hast ${todo.length === 1 ? "einen Satz" : todo.length + " Sätze"} geändert.`, `You changed ${todo.length === 1 ? "a sentence" : todo.length + " sentences"}.`) + " " + rest
     : manual ? L("Deine Sätze bleiben gleich. Claude macht Fehlermuster, Umformen, B1-Version und Satzmuster neu. Der Fortschritt bei den alten Satzmustern geht dabei verloren, deine Boxen bleiben.", "Your sentences stay the same. Claude remakes the mistake patterns, Umformen, B1 version and pattern drills. Progress on the old pattern drills is lost, your boxes stay.")
     : L("Die B1-Version passt nicht mehr zu deinen Sätzen.", "The B1 version no longer matches your sentences.") + " " + rest;
@@ -524,6 +539,7 @@ function fixBlock(host, a, after, opt) {
     if (r.pm.length) a.pm = smStamp(r.pm);
     a.corr = a.sents.map(x => plain(x.de)).join(" ");
     if (r.up) { a.up = r.up; a.upOld = false; }
+    delete a.fromUp; delete a.upPats;
     admitWaiting(); DB.atoms.forEach(syncAtom);
     save(); toast(L("Übernommen", "Done")); after();
   };
@@ -646,7 +662,7 @@ function atomDetail(id, editing) {
     <div class="hl"><div class="slist">${a.sents.map(s => `<div class="s"><div class="de"><span>${markedHtml(s.de)}</span><span class="sbox">${a.paused && s.paused ? "⏸ " : ""}${boxLine(s)}</span></div>${s.en ? `<div class="en">${esc(s.en)}</div>` : ""}${s.pend ? `<div class="en" style="color:var(--amber)">${L("wartet auf Claude", "waiting for Claude")}</div>` : s.chk ? `<div class="en" style="color:var(--amber)">${L("geändert, noch nicht geprüft", "changed, not checked yet")}</div>` : ""}</div>`).join("")}</div></div>
     <div id="fixHost"></div>
     ${TTS ? `<button class="btn ghost" data-say="${esc(a.corr)}">${L("Ganzen Text anhören", "Play the whole text")}</button>` : ""}
-    ${a.up ? `<div class="up"><div class="lab"><span>${L("Eine Stufe höher (B1)", "One step up (B1)")}</span>${TTS ? `<button class="spk" data-say="${esc(a.up)}">${ICON.spk}</button>` : ""}</div>${esc(a.up)}</div>` : ""}
+    ${a.up ? `<div class="up"><div class="lab"><span>${L("Eine Stufe höher (B1)", "One step up (B1)")}</span>${TTS ? `<button class="spk" data-say="${esc(a.up)}">${ICON.spk}</button>` : ""}</div>${esc(a.up)}<button class="btn ghost" id="upMake" style="margin-top:10px">${L("Als Atom übernehmen", "Make this the atom")}</button></div>` : ""}
     <div id="mp3Host"></div>
     ${hist ? `<p class="muted small">${hist}</p>` : ""}
     ${a.sents.some(x => isLive(x) && !x.pend) ? `<button class="btn primary" id="now">${L("Jetzt wiederholen", "Review now")}</button>` : ""}
@@ -664,6 +680,11 @@ function atomDetail(id, editing) {
   $("#drA").onclick = () => drillHub(id);
   $("#smA").onclick = () => (a.pm || []).length ? smHub(id) : smFetch([id], () => atomDetail(id));
   $("#edit").onclick = () => atomDetail(id, true);
+  const um = $("#upMake");
+  if (um) { let arm = false; um.onclick = () => {
+    if (!arm) { arm = true; um.textContent = L("Sicher? Deine alten Sätze werden ersetzt, Neustart in Box 1. Nochmal tippen.", "Sure? Your old sentences are replaced and start again in box 1. Tap again."); um.classList.add("bad"); return; }
+    if (promoteUp(a)) { toast(L("Die B1-Version ist jetzt das Atom", "The B1 version is now the atom")); atomDetail(id); const f = $("#fixHost"); if (f) f.scrollIntoView({ behavior: "smooth", block: "start" }); }
+  }; }
   let armed = false;
   $("#del").onclick = e => { if (!armed) { armed = true; e.target.textContent = L("Nochmal tippen zum Löschen", "Tap again to delete"); e.target.classList.add("bad"); return; } DB.atoms = DB.atoms.filter(x => x.id !== id); save(); toast(L("Gelöscht", "Deleted")); atomsHub(); };
 }
