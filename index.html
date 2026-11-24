@@ -749,6 +749,7 @@ function mehr(){
    ${missCount()?`<button class="btn ghost" id="clrMiss">${L("Gemerkte Fehler löschen","Clear remembered mistakes")}</button>`:""}
    <div class="h2">${L("Ton","Sound")}</div>${sayToggle()}
    ${TTS?`<button class="row-sw" id="sndTest"><span class="tx"><b>${L("Ton testen","Test sound")}</b><span class="muted small">${L("Tippe hier. Du solltest „Guten Morgen“ hören.","Tap here. You should hear “Guten Morgen”.")}</span></span><span class="spk">${ICON.spk}</span></button>`:`<div class="tts-note">${L("Ton ist in dieser Ansicht nicht verfügbar. Öffne die App in Chrome, dann funktionieren Vorlesen und Hören.","Sound isn't available in this view. Open the app in Chrome and reading aloud will work.")}</div>`}
+   ${typeof voiceCtl==="function"?voiceCtl():""}
    <div class="h2">${L("So funktioniert's","How it works")}</div>
    <div class="menu">
     <div class="item"><span class="ic">60</span><span class="tx"><span class="tt">${L("Neue Wörter pro Tag","New words per day")}</span><span class="ss">${L(`${PER_DAY} als Tagesziel, in Päckchen zu ${PACK}. Du kannst jederzeit mehr lernen.`,`${PER_DAY} as a daily goal, in packs of ${PACK}. You can always learn more.`)}</span></span></div>
@@ -765,7 +766,7 @@ function mehr(){
    <div class="h2">${L("Zurücksetzen","Reset")}</div>
    <button class="btn ghost" id="reset">${L("Allen Fortschritt löschen","Delete all progress")}</button>`;
   shell(L("Mehr","More"),body,{redraw:mehr}); bindSayToggle(); bindMissLevel(mehr); bindFotoBackup();
-  if(typeof bindRemind==="function") bindRemind(mehr);
+  if(typeof bindRemind==="function") bindRemind(mehr); if(typeof bindVoiceCtl==="function") bindVoiceCtl();
   $("#pauseSw").onclick=()=>{DB.pause=!DB.pause;save();mehr();};
   const st=$("#sndTest"); if(st) st.onclick=()=>{ if(!say("Guten Morgen")) toast(NO_SOUND()); };
   document.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ const t=b.dataset.pick; if(t) DB.pick[DB.level]=t; else delete DB.pick[DB.level]; save(); const sy=window.scrollY; mehr(); window.scrollTo(0,sy); });

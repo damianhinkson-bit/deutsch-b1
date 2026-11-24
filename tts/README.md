@@ -6,3 +6,5 @@ Downloaded by the app the first time you save an MP3 (about 75 MB), kept in its 
 - `ort.wasm.min.js`, `ort-wasm-simd.wasm`: onnxruntime-web 1.18.0 (MIT)
 - `piper_phonemize.*`: @diffusionstudio/piper-wasm 1.0.0 (piper-phonemize MIT, espeak-ng GPL-3.0); the data file is repacked with the German dictionary only
 - `lamejs.js`: @breezystack/lamejs 1.2.7 (LGPL-3.0)
+
+- `thorsten.onnx` and `ort-wasm-simd.wasm` are stored as 5 MB pieces (`.p00`, `.p01` …). The app saves each piece as it arrives, so a stopped download carries on where it left off. A voice saved whole by the old version still counts.
