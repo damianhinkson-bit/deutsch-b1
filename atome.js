@@ -309,6 +309,7 @@ function claudePrompt(ctx) {
   P.push("B1-VERSION:");
   P.push("(derselbe Inhalt eine Stufe besser, natürlich und auf B1-Niveau)");
   satzmusterPromptLines(P);
+  if (ctx.spTask && typeof spPhPromptLines === "function") spPhPromptLines(P, ctx.spTask.id);
   P.push("TITEL:");
   P.push("(ein kurzer deutscher Titel für den Text, 2–4 Wörter)");
   return P.join("\n");
@@ -325,7 +326,7 @@ function parseNums(t) {
 }
 function parseClaude(raw) {
   const s = String(raw || "").replace(/\r/g, "").replace(/\*\*|__/g, "").split("\n").filter(l => !/^\s*```/.test(l)).join("\n");
-  const re = /^[ \t>#]*(KORREKTUR|SÄTZE|SAETZE|ENGLISCH|FEHLERMUSTER|SATZMUSTER|MUSTER|UMFORMEN|B1[- ]VERSION|TITEL)\b[ \t]*:?[ \t]*/gim;
+  const re = /^[ \t>#]*(KORREKTUR|SÄTZE|SAETZE|ENGLISCH|FEHLERMUSTER|SATZMUSTER|MUSTER|UMFORMEN|B1[- ]VERSION|PHRASEN|TITEL)\b[ \t]*:?[ \t]*/gim;
   const marks = []; let m;
   while ((m = re.exec(s))) marks.push({ k: m[1].toUpperCase().replace("SAETZE", "SÄTZE").replace("B1 VERSION", "B1-VERSION"), start: m.index, body: m.index + m[0].length });
   // the last KORREKTUR wins (a quoted prompt may contain one too); without one, the first SÄTZE
@@ -363,7 +364,7 @@ function parseClaude(raw) {
   }).filter(x => x.name);
   const up = out["B1-VERSION"] && !isPh(out["B1-VERSION"]) ? lines(out["B1-VERSION"]).join("\n") : "";
   const title = out.TITEL && !isPh(out.TITEL) ? lines(out.TITEL)[0].replace(/^[„“"]|[“”"]$/g, "").trim() : "";
-  return { sents, fp, hasFp: "FEHLERMUSTER" in out, tr: list(out.UMFORMEN), up, title, muster: list(out.MUSTER), pm: out.SATZMUSTER ? smParse(out.SATZMUSTER) : [], corr: korr ? plain(takeGuess(korr).t) : sents.map(x => plain(x.de)).join(" ") };
+  return { sents, fp, hasFp: "FEHLERMUSTER" in out, tr: list(out.UMFORMEN), up, title, muster: list(out.MUSTER), pm: out.SATZMUSTER ? smParse(out.SATZMUSTER) : [], phr: out.PHRASEN && typeof spPhParse === "function" ? spPhParse(out.PHRASEN) : [], corr: korr ? plain(takeGuess(korr).t) : sents.map(x => plain(x.de)).join(" ") };
 }
 
 /* ---------- the atom editor (after a correction, and for "Bearbeiten") ---------- */
@@ -559,6 +560,7 @@ function claudeBlock(ctx, host) {
       <textarea class="ta2" id="cbPaste" placeholder="${L("Claudes Antwort hier einfügen", "Paste Claude's reply here")}"></textarea>
       <button class="btn primary" id="cbRead">${L("Korrektur übernehmen", "Use this correction")}</button>
       <button class="btn ghost" id="cbSelf" style="margin-top:8px">${L("Ohne Claude: selbst korrigieren", "Without Claude: correct it myself")}</button></div></div>
+    <div id="cbPh"></div>
     <div id="cbOut"></div></div>`;
   const sh = $("#cbShare"); if (sh) sh.onclick = () => { if (!shareText(prompt)) copyText(prompt, ok => toast(ok ? L("Kopiert", "Copied") : L("Kopieren ging nicht", "Couldn't copy"))); };
   $("#cbCopy").onclick = () => copyText(prompt, ok => toast(ok ? L("Kopiert. Jetzt bei Claude einfügen.", "Copied. Now paste it to Claude.") : L("Kopieren ging nicht", "Couldn't copy")));
@@ -572,6 +574,7 @@ function claudeBlock(ctx, host) {
     const p = parseClaude($("#cbPaste").value);
     if (!p) { toast(L("Ich finde den Block „KORREKTUR:“ nicht. Bitte die ganze Antwort einfügen.", "I can't find the “KORREKTUR:” block. Please paste the whole reply.")); return; }
     edit(stateFromParse(p, ctx.title), true);
+    if (ctx.spTask && p.phr && p.phr.length) spPhPicker($("#cbPh"), ctx.spTask, p.phr);
   };
   $("#cbSelf").onclick = () => {
     const base = ctx.dialog ? ctx.text.split("\n").filter(l => /^Ich:/.test(l)).map(l => l.replace(/^Ich:\s*/, "")).join("\n") : ctx.text;

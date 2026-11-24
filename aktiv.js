@@ -288,8 +288,9 @@ function dialogTurn(speak) {
     ${inputBox("dlg", { value: s.me[s.i] || "", rows: 3, draft: false })}
     <div class="row2"><button class="btn ghost" id="mdl">${s.showModel ? L("Muster ausblenden", "Hide example") : L("Muster zeigen", "Show example")}</button><button class="btn primary" id="nx">${s.i + 1 < t.turns.length ? L("Weiter", "Next") : L("Fertig", "Finish")}</button></div>
     <div id="mdlBox">${s.showModel ? modelBox(turn.m) : ""}</div>
-    ${phraseFold(SP_PHR[t.cat] || [], false)}`;
+    ${spPhraseFold(t, false)}`;
   shell(T(t.t), body, { back: L("Sprechen", "Speaking"), backTo: "aktiv", redraw: () => dialogTurn(false) });
+  spPhBind(t);
   $("#back").onclick = () => { recStop(); spHub(); };
   const ta = bindInput("dlg", { draft: false, onInput: v => { s.me[s.i] = v; } });
   $("#hideSw").onclick = () => { DB.spHide = !DB.spHide; save(); dialogTurn(false); };
@@ -313,11 +314,13 @@ function dialogDone() {
   const body = `${sitCard(t, L("Geschafft", "Done"))}
     <div class="sec-h">${L("Dein Gespräch und ein Beispiel", "Your conversation and an example")}</div>
     <div class="log">${t.turns.map((x, i) => `<div class="bub p"><span class="who">${L("Partner", "Partner")}</span>${esc(x.p)}</div><div class="bub me"><span class="who">${L("Du", "You")}</span>${esc(s.me[i] || "")}</div><div class="model" style="align-self:flex-end;max-width:88%"><div class="lab"><span>${L("Beispiel", "Example")}</span>${TTS ? `<button class="spk" data-say="${esc(x.m)}">${ICON.spk}</button>` : ""}</div>${esc(x.m)}</div>`).join("")}</div>
+    ${spPhraseFold(t, false)}
     <div id="cbHost"></div>
     <div class="row2"><button class="btn ghost" id="again">${L("Nochmal", "Again")}</button><button class="btn ghost" id="list">${L("Andere Aufgabe", "Another task")}</button></div>`;
   shell(T(t.t), body, { back: L("Sprechen", "Speaking"), backTo: "aktiv", redraw: dialogDone });
+  spPhBind(t);
   $("#back").onclick = () => spHub();
-  claudeBlock({ kindDe: "Sprechen (Gespräch)", kindKey: "sp", title: t.t[0], task: t.sit[0], text: txt, spoken: true, dialog: true, cue: t.turns.map(x => x.p).join("\n") }, $("#cbHost"));
+  claudeBlock({ kindDe: "Sprechen (Gespräch)", kindKey: "sp", title: t.t[0], task: t.sit[0], text: txt, spoken: true, dialog: true, spTask: t, cue: t.turns.map(x => x.p).join("\n") }, $("#cbHost"));
   $("#again").onclick = () => startDialog(t); $("#list").onclick = () => spHub();
 }
 
@@ -329,18 +332,19 @@ function monoTask(t) {
   const body = `${sitCard(t, L("Aufgabe", "Task"))}
     <p class="muted small" style="margin:10px 2px 0">${L(`Sprich ungefähr ${Math.round(t.sec / 60 * 2) / 2} Minuten. Tipp auf „Sprechen“ und sprich ohne Pause weiter, auch wenn du Fehler machst.`, `Speak for about ${Math.round(t.sec / 60 * 2) / 2} minutes. Tap “Speak” and keep going even if you make mistakes.`)}</p>
     ${inputBox(key, { rows: 7, timer: t.sec, wc: 0 })}
-    ${phraseFold(SP_PHR[t.cat] || [], false)}
+    ${spPhraseFold(t, false)}
     <details class="fold" id="mFold"><summary>${L("Beispieltext", "Example text")}</summary><div class="in">${modelBox(t.m)}</div></details>
     <button class="btn primary" id="done">${L("Fertig: korrigieren lassen", "Done: get it corrected")}</button>
     <div id="cbHost"></div>`;
   shell(T(t.t), body, { back: L("Sprechen", "Speaking"), backTo: "aktiv", redraw: () => monoTask(t) });
+  spPhBind(t);
   $("#back").onclick = () => { recStop(); spHub(); };
   const ta = bindInput(key, { timer: t.sec, elapsed: MONO_T[t.id] || 0, onTime: s => { MONO_T[t.id] = s; } });
   $("#done").onclick = () => {
     recStop();
     const v = ta.value.trim(); if (words(v) < 5) { toast(L("Sprich oder schreib zuerst ein paar Sätze.", "Say or write a few sentences first.")); return; }
     DB.spDone[t.id] = today(); save();
-    claudeBlock({ kindDe: t.cat === "praes" ? "Sprechen (Präsentation)" : "Sprechen (allein)", kindKey: "sp", title: t.t[0], task: t.sit[0] + " Punkte: " + t.pts.map(p => p[0]).join(", ") + ".", text: v, spoken: true, cue: t.pts.map(p => p[0]).join(" · "), onSaved: () => { draftSet(key, ""); delete MONO_T[t.id]; } }, $("#cbHost"));
+    claudeBlock({ kindDe: t.cat === "praes" ? "Sprechen (Präsentation)" : "Sprechen (allein)", kindKey: "sp", title: t.t[0], task: t.sit[0] + " Punkte: " + t.pts.map(p => p[0]).join(", ") + ".", text: v, spoken: true, spTask: t, cue: t.pts.map(p => p[0]).join(" · "), onSaved: () => { draftSet(key, ""); delete MONO_T[t.id]; } }, $("#cbHost"));
     $("#cbHost").scrollIntoView({ behavior: "smooth", block: "start" });
   };
 }
