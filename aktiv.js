@@ -233,6 +233,7 @@ function aktiv() {
     ${item("mSp", "🎙", L("Sprechen", "Speaking"), L(`${SPRECHEN.length} Aufgaben · ${spN} geübt`, `${SPRECHEN.length} tasks · ${spN} practised`))}
     ${item("mSw", "✎", L("Schreiben", "Writing"), L(`${SCHREIBEN.length} Aufgaben und freies Schreiben · ${swN} geschrieben`, `${SCHREIBEN.length} tasks plus free writing · ${swN} written`))}
     ${item("mAt", ad || act || "0", L("Atome", "Atoms"), act ? L(`${ad} fällig · ${act} aktiv`, `${ad} due · ${act} active`) : L("Deine korrigierten Texte als Wiederholung", "Your corrected texts, for review"))}
+    ${typeof vnPage === "function" ? item("mVn", "▶", L("Sprachnotizen", "Voice notes"), `<span id="mVnN">${L("Deine MP3s von Atomen anhören", "Listen to your MP3s from atoms")}</span>`) : ""}
     ${item("mV", vD || "Vp", L("Verben mit Präpositionen", "Verbs with prepositions"), L(`${VERBEN.length} Verben · ${vD} fällig`, `${VERBEN.length} verbs · ${vD} due`))}
     ${item("mR", rD || "Rm", L("Redemittel", "Useful phrases"), L(`${REDEMITTEL.length} Wendungen · ${rD} fällig`, `${REDEMITTEL.length} phrases · ${rD} due`))}
     ${item("mG", "Gr", L("Grammatik-Trainer", "Grammar trainer"), L("A1, A2 und B1, im Tab Grammatik", "A1, A2 and B1, in the Grammar tab"))}
@@ -242,6 +243,7 @@ function aktiv() {
   shell(L("Aktiv", "Active"), body, { redraw: aktiv, noLevel: true });
   const h = $("#hAtoms"); if (h) h.onclick = () => startAtomReview(atomsDue().map(a => a.id));
   $("#mSp").onclick = () => spHub(); $("#mSw").onclick = () => swHub(); $("#mAt").onclick = () => atomsHub();
+  const vn = $("#mVn"); if (vn) { vn.onclick = () => vnPage(() => go("aktiv"), L("Aktiv", "Active")); vnAll().then(l => { const n = $("#mVnN"); if (n && l.length) n.textContent = L(`${l.length} gespeichert · anhören`, `${l.length} saved · listen`); }); }
   $("#mV").onclick = () => deckHub("v"); $("#mR").onclick = () => deckHub("r");
   $("#mG").onclick = () => go("gram");
   if (typeof bindFluencyMenu === "function") bindFluencyMenu();
