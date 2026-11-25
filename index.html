@@ -192,6 +192,32 @@ body.gram-on .app{max-width:none;padding-bottom:0;min-height:0}
 .empty{text-align:center;color:var(--muted);padding:30px 10px}
 .study .cnt{color:var(--muted);font-weight:700;font-size:14px;text-align:center;margin-bottom:8px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+/* voice notes */
+.vnbar{position:fixed;left:0;right:0;z-index:29;background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -4px 14px rgba(0,0,0,.12)}
+.vnbar-in{display:flex;align-items:center;gap:4px;max-width:600px;margin:0 auto;padding:6px max(8px,env(safe-area-inset-right,0px)) 5px max(8px,env(safe-area-inset-left,0px))}
+.vnbar .vn-prog{max-width:600px;margin:0 auto}
+.vn-prog{height:3px;background:var(--surface-2)} .vn-prog i{display:block;height:100%;width:0;background:var(--amber)}
+.vb{width:38px;height:38px;flex:0 0 auto;border-radius:10px;display:grid;place-items:center;color:var(--petrol-soft);font-weight:800;font-size:12.5px}
+.vb.main{background:var(--petrol);color:var(--on-petrol);border-radius:50%;width:40px;height:40px}
+.vb.on{background:var(--amber);color:var(--amber-ink)} .vb.sp{width:46px}
+.vb svg,.vplay svg,.vdel svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.vb svg .f,.vplay svg .f,.spk svg .f{fill:currentColor;stroke:none}
+.vn-tx{flex:1;min-width:0;text-align:left;padding:0 4px;display:flex;flex-direction:column}
+.vn-tx b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vn-tx>span{display:flex;justify-content:space-between;gap:6px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.vn-tx>span>span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis} #vnT{white-space:nowrap;flex:0 0 auto}
+body.vn-on .app{padding-bottom:calc(140px + env(safe-area-inset-bottom,0px))}
+body.vn-on .toast{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+body.gram-on .vnbar{display:none}
+.vn-list{background:var(--surface);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden}
+.vn-row{display:flex;align-items:center;gap:12px;padding:10px 8px 10px 12px;border-bottom:1px solid var(--line)}
+.vn-row:last-child{border-bottom:none} .vn-row.cur{background:var(--amber-tint)}
+.vn-row .tx{flex:1;min-width:0;display:flex;flex-direction:column} .vn-row .tx b{overflow-wrap:anywhere}
+.vplay{width:42px;height:42px;flex:0 0 auto;border-radius:50%;background:var(--petrol);color:var(--on-petrol);display:grid;place-items:center}
+.vplay.on{background:var(--amber);color:var(--amber-ink)}
+.vdel{flex:0 0 auto;min-width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:var(--muted);font-size:12px;font-weight:800;padding:0 6px}
+.vdel.armed{background:var(--bad-tint);color:var(--bad)}
+.linkbtn{display:block;margin:8px 2px 0;color:var(--petrol-soft);font-weight:700;font-size:14px;padding:4px 0}
 </style>
 
 </head><body>
@@ -749,6 +775,7 @@ function mehr(){
    ${missCount()?`<button class="btn ghost" id="clrMiss">${L("Gemerkte Fehler löschen","Clear remembered mistakes")}</button>`:""}
    <div class="h2">${L("Ton","Sound")}</div>${sayToggle()}
    ${TTS?`<button class="row-sw" id="sndTest"><span class="tx"><b>${L("Ton testen","Test sound")}</b><span class="muted small">${L("Tippe hier. Du solltest „Guten Morgen“ hören.","Tap here. You should hear “Guten Morgen”.")}</span></span><span class="spk">${ICON.spk}</span></button>`:`<div class="tts-note">${L("Ton ist in dieser Ansicht nicht verfügbar. Öffne die App in Chrome, dann funktionieren Vorlesen und Hören.","Sound isn't available in this view. Open the app in Chrome and reading aloud will work.")}</div>`}
+   ${typeof vnMehrRow==="function"?vnMehrRow():""}
    ${typeof voiceCtl==="function"?voiceCtl():""}
    <div class="h2">${L("So funktioniert's","How it works")}</div>
    <div class="menu">
@@ -766,7 +793,7 @@ function mehr(){
    <div class="h2">${L("Zurücksetzen","Reset")}</div>
    <button class="btn ghost" id="reset">${L("Allen Fortschritt löschen","Delete all progress")}</button>`;
   shell(L("Mehr","More"),body,{redraw:mehr}); bindSayToggle(); bindMissLevel(mehr); bindFotoBackup();
-  if(typeof bindRemind==="function") bindRemind(mehr); if(typeof bindVoiceCtl==="function") bindVoiceCtl();
+  if(typeof bindRemind==="function") bindRemind(mehr); if(typeof bindVoiceCtl==="function") bindVoiceCtl(); if(typeof bindVnMehr==="function") bindVnMehr();
   $("#pauseSw").onclick=()=>{DB.pause=!DB.pause;save();mehr();};
   const st=$("#sndTest"); if(st) st.onclick=()=>{ if(!say("Guten Morgen")) toast(NO_SOUND()); };
   document.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ const t=b.dataset.pick; if(t) DB.pick[DB.level]=t; else delete DB.pick[DB.level]; save(); const sy=window.scrollY; mehr(); window.scrollTo(0,sy); });
@@ -788,6 +815,7 @@ function mehr(){
 <script src="fluency-data.js"></script>
 <script src="fluency.js"></script>
 <script src="tts-mp3.js"></script>
+<script src="voicenotes.js"></script>
 <script src="bilder.js"></script>
 <script src="fotos.js"></script>
 <script src="dashboard.js"></script>

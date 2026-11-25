@@ -202,7 +202,8 @@ function mp3Block(host, a) {
     host.innerHTML = `<div class="sec-h">${L("Als MP3 speichern", "Save as MP3")}</div>
       <div class="row2">${mine ? `<button class="btn ghost" data-mp3="mine">${L("Mein Text", "My text")}</button>` : ""}${up ? `<button class="btn ghost" data-mp3="up">${L("B1-Version", "B1 version")}</button>` : ""}</div>
       <p class="muted small" id="mp3Note" style="margin:6px 2px 0">${VOICE ? "" : L(`Beim ersten Mal lädt die App eine deutsche Stimme (${VOICE_MB} MB, einmalig). Danach geht es offline.`, `The first time, the app downloads a German voice (${VOICE_MB} MB, once). After that it works offline.`)}</p>
-      <div id="mp3Out"></div>`;
+      <div id="mp3Out"></div><div id="vnAtom"></div>`;
+    if (typeof vnAtomList === "function") vnAtomList(host.querySelector("#vnAtom"), a, { mine, up });
     voiceSaved().then(got => { const n = host.querySelector("#mp3Note"); if (!n || n.dataset.busy || VOICE) return; if (got >= VOICE_TOTAL) n.textContent = ""; else if (got > 0) n.textContent = L(`Stimme: ${Math.round(got / 1e6)} von ${VOICE_MB} MB schon gespeichert. Tipp auf einen Knopf, dann lädt sie weiter.`, `Voice: ${Math.round(got / 1e6)} of ${VOICE_MB} MB already saved. Tap a button and it carries on.`); });
     host.querySelectorAll("[data-mp3]").forEach(b => b.onclick = () => run(b.dataset.mp3));
   };
@@ -216,10 +217,16 @@ function mp3Block(host, a) {
       const name = mp3Name(a.t, which === "up" ? "B1" : L("mein-Text", "my-text")), url = URL.createObjectURL(blob);
       const file = new File([blob], name, { type: "audio/mpeg" });
       const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
-      note.textContent = L(`Fertig: ${which === "up" ? "B1-Version" : "dein Text"}, ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")} Min.`, `Done: ${which === "up" ? "B1 version" : "your text"}, ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")} min.`);
-      outEl.innerHTML = `<audio controls src="${url}" style="width:100%;margin:8px 0 4px"></audio>
-        <div class="row2"><a class="btn petrol" href="${url}" download="${esc(name)}" style="text-align:center;text-decoration:none">${L("Herunterladen", "Download")}</a>${canShare ? `<button class="btn ghost" id="mp3Share">${L("Teilen", "Share")}</button>` : ""}</div>`;
+      let kept = false;
+      if (typeof vnPut === "function") {
+        try { await vnPut({ id: vnId(a.id, which), atomId: a.id, which, title: a.t || "Atom", blob, secs, src: which === "up" ? up : mine, at: Date.now() }); kept = true; } catch (e) { }
+      }
+      note.textContent = L(`Fertig: ${which === "up" ? "B1-Version" : "dein Text"}, ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")} Min.`, `Done: ${which === "up" ? "B1 version" : "your text"}, ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")} min.`)
+        + " " + (kept ? L("In deinen Sprachnotizen gespeichert ✓", "Saved to your voice notes ✓") : L("Konnte nicht in der App gespeichert werden. Lade sie herunter.", "Couldn't keep it in the app. Download it instead."));
+      outEl.innerHTML = `${kept ? "" : `<audio controls src="${url}" style="width:100%;margin:8px 0 4px"></audio>`}
+        <div class="row2"><a class="btn ghost" href="${url}" download="${esc(name)}" style="text-align:center;text-decoration:none">${L("Auf dem Handy speichern", "Save to phone")}</a>${canShare ? `<button class="btn ghost" id="mp3Share">${L("Teilen", "Share")}</button>` : ""}</div>`;
       const sh = outEl.querySelector("#mp3Share"); if (sh) sh.onclick = () => navigator.share({ files: [file], title: name }).catch(() => { });
+      if (kept) { vnAtomList(host.querySelector("#vnAtom"), a, { mine, up }).then(() => { VN.q = [vnId(a.id, which)]; vnLoad(0, false); }); }
     } catch (e) {
       note.textContent = navigator.onLine === false && !VOICE
         ? L("Für den ersten Download brauchst du Internet. Danach geht es offline.", "You need internet for the first download. After that it works offline.")

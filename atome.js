@@ -689,7 +689,7 @@ function atomDetail(id, editing) {
     if (promoteUp(a)) { toast(L("Die B1-Version ist jetzt das Atom", "The B1 version is now the atom")); atomDetail(id); const f = $("#fixHost"); if (f) f.scrollIntoView({ behavior: "smooth", block: "start" }); }
   }; }
   let armed = false;
-  $("#del").onclick = e => { if (!armed) { armed = true; e.target.textContent = L("Nochmal tippen zum Löschen", "Tap again to delete"); e.target.classList.add("bad"); return; } DB.atoms = DB.atoms.filter(x => x.id !== id); save(); toast(L("Gelöscht", "Deleted")); atomsHub(); };
+  $("#del").onclick = e => { if (!armed) { armed = true; e.target.textContent = L("Nochmal tippen zum Löschen", "Tap again to delete"); e.target.classList.add("bad"); return; } DB.atoms = DB.atoms.filter(x => x.id !== id); save(); if (typeof vnDelAtom === "function") vnDelAtom(id); toast(L("Gelöscht", "Deleted")); atomsHub(); };
 }
 
 /* =================================================================== PATTERNS */
