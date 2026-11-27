@@ -401,8 +401,11 @@ function atomEditor(host, st, opt) {
           <button class="pchip" data-del="${i}" style="margin-top:8px">${L("Satz löschen", "Delete sentence")}</button>`
         : `<div style="font-size:17px;font-weight:700;line-height:1.4">${esc(plain(s.de))}</div>${s.en ? `<div class="muted" style="margin-top:2px">${esc(s.en)}</div>` : ""}`}
         ${s.g ? `<div class="gban"><b>${L("Geraten. Meintest du das?", "Guessed. Is this what you meant?")}</b>
-          ${s.no ? `<textarea class="ta2" data-f="pend" data-i="${i}" placeholder="${L("Was wolltest du sagen? Englisch reicht.", "What did you want to say? English is fine.")}">${esc(s.pend || "")}</textarea>
-            <div class="row2"><button class="btn ghost" data-back="${i}">${L("Doch, es stimmt", "Actually, it's right")}</button><button class="btn petrol" data-keep="${i}">${L("Claude fragen", "Ask Claude")}</button></div>`
+          ${s.no ? `<p class="muted small" style="margin:6px 0 0">${L("Ändere nur, was falsch ist: das Deutsche, das Englische oder beides.", "Just fix what's wrong: the German, the English, or both.")}</p>
+            <label class="lab2">${L("Deutsch", "German")}</label><textarea class="ta2" data-f="de" data-i="${i}" aria-label="${L("Deutscher Satz", "German sentence")}">${esc(s.de)}</textarea>
+            <label class="lab2">${L("Englisch", "English")}</label><input class="tin" data-f="en" data-i="${i}" value="${esc(s.en)}" aria-label="${L("Englische Bedeutung", "English meaning")}">
+            <div class="row2"><button class="btn ghost" data-fix="${i}">${L("So speichern", "Save as is")}</button><button class="btn petrol" data-keep="${i}">${L("Claude prüfen lassen", "Have Claude check")}</button></div>
+            <button class="pchip" data-back="${i}" style="margin-top:8px">${L("Doch, es stimmte", "Actually, it was right")}</button>`
           : `<div class="row2"><button class="btn petrol" data-ok="${i}">${L("Ja, stimmt", "Yes, right")}</button><button class="btn ghost" data-no="${i}">${L("Nein", "No")}</button></div>`}</div>` : ""}
         ${s.pend && !s.g ? `<div class="gban">${L("Wird von Claude geprüft: ", "Claude will check: ")}<b>${esc(s.pend)}</b></div>` : ""}
       </div>`).join("")}
@@ -413,9 +416,12 @@ function atomEditor(host, st, opt) {
     const redo = () => { const y = window.scrollY; draw(); window.scrollTo(0, y); };
     host.querySelectorAll("[data-ed]").forEach(b => b.onclick = () => { const i = +b.dataset.ed; open[i] = !open[i]; redo(); });
     host.querySelectorAll("[data-ok]").forEach(b => b.onclick = () => { const s = st.sents[+b.dataset.ok]; s.g = false; s.no = false; s.pend = ""; redo(); });
-    host.querySelectorAll("[data-no]").forEach(b => b.onclick = () => { st.sents[+b.dataset.no].no = true; redo(); const t = host.querySelector(`[data-f="pend"][data-i="${b.dataset.no}"]`); if (t) t.focus(); });
-    host.querySelectorAll("[data-back]").forEach(b => b.onclick = () => { const s = st.sents[+b.dataset.back]; s.no = false; s.pend = ""; redo(); });
-    host.querySelectorAll("[data-keep]").forEach(b => b.onclick = () => { const s = st.sents[+b.dataset.keep]; s.pend = (s.pend || "").trim(); if (!s.pend) { toast(L("Schreib kurz, was du meintest.", "Write briefly what you meant.")); return; } s.g = false; s.no = false; redo(); });
+    // "No" on a guessed sentence: the German and the English come up filled in, so only the wrong part needs fixing
+    host.querySelectorAll("[data-no]").forEach(b => b.onclick = () => { const s = st.sents[+b.dataset.no]; s.no = true; s.de0 = s.de; s.en0 = s.en || ""; s.de = stripGuess(s.de); redo(); const t = host.querySelector(`[data-f="de"][data-i="${b.dataset.no}"]`); if (t) t.focus(); });
+    host.querySelectorAll("[data-back]").forEach(b => b.onclick = () => { const s = st.sents[+b.dataset.back]; if (s.de0 != null) { s.de = s.de0; s.en = s.en0; } s.no = false; s.pend = ""; redo(); });
+    const changed = s => { const de = stripGuess(s.de).replace(/\s+/g, " ").trim(), en = (s.en || "").trim(); return { de, en, deCh: de !== stripGuess(s.de0 || "").replace(/\s+/g, " ").trim(), enCh: en !== (s.en0 || "").trim() }; };
+    host.querySelectorAll("[data-fix]").forEach(b => b.onclick = () => { const s = st.sents[+b.dataset.fix], c = changed(s); if (!c.de) { toast(L("Der deutsche Satz fehlt.", "The German sentence is missing.")); return; } s.de = c.de; s.en = c.en; s.g = false; s.no = false; s.pend = ""; redo(); });
+    host.querySelectorAll("[data-keep]").forEach(b => b.onclick = () => { const s = st.sents[+b.dataset.keep], c = changed(s); if (!c.deCh && !c.enCh) { toast(L("Ändere zuerst, was falsch ist.", "First change what's wrong.")); return; } s.de = c.de || stripGuess(s.de0 || ""); s.en = c.en; s.pend = c.enCh && c.en ? c.en : c.de; s.g = false; s.no = false; redo(); });
     let armed = -1;
     host.querySelectorAll("[data-del]").forEach(b => b.onclick = () => { const i = +b.dataset.del; if (armed !== i) { armed = i; b.textContent = L("Wirklich?", "Sure?"); return; } st.sents.splice(i, 1); delete open[i]; redo(); });
     if (opt.cancel) $("#edCancel", host).onclick = opt.cancel;
@@ -551,18 +557,16 @@ function fixBlock(host, a, after, opt) {
 function claudeBlock(ctx, host) {
   atomsReady();
   const prompt = claudePrompt(ctx);
-  const canShare = (() => { try { return !!navigator.share; } catch (e) { return false; } })();
   host.innerHTML = `<div class="cb"><h3>${L("Korrektur von Claude", "Correction from Claude")}</h3>
     <div class="muted small">${L("Die App kann nicht selbst korrigieren. So geht's in zwei Schritten:", "The app can't correct you by itself. It takes two steps:")}</div>
     <div class="step"><span class="n">1</span><div class="b"><b>${L("An Claude senden", "Send to Claude")}</b><div class="muted small">${L("Kopiere die fertige Anfrage und füge sie in einen Chat mit Claude ein.", "Copy the ready-made request and paste it into a chat with Claude.")}</div>
-      <div class="row2">${canShare ? `<button class="btn petrol" id="cbShare">${L("Teilen", "Share")}</button>` : ""}<button class="btn ${canShare ? "ghost" : "petrol"}" id="cbCopy">${L("Kopieren", "Copy")}</button></div></div></div>
+      <button class="btn petrol" id="cbCopy" style="margin-top:10px">${L("Kopieren", "Copy")}</button></div></div>
     <div class="step"><span class="n">2</span><div class="b"><b>${L("Antwort einfügen", "Paste the reply")}</b><div class="muted small">${L("Kopiere Claudes ganze Antwort und füge sie hier ein.", "Copy Claude's whole reply and paste it here.")}</div>
       <textarea class="ta2" id="cbPaste" placeholder="${L("Claudes Antwort hier einfügen", "Paste Claude's reply here")}"></textarea>
       <button class="btn primary" id="cbRead">${L("Korrektur übernehmen", "Use this correction")}</button>
       <button class="btn ghost" id="cbSelf" style="margin-top:8px">${L("Ohne Claude: selbst korrigieren", "Without Claude: correct it myself")}</button></div></div>
     <div id="cbPh"></div>
     <div id="cbOut"></div></div>`;
-  const sh = $("#cbShare"); if (sh) sh.onclick = () => { if (!shareText(prompt)) copyText(prompt, ok => toast(ok ? L("Kopiert", "Copied") : L("Kopieren ging nicht", "Couldn't copy"))); };
   $("#cbCopy").onclick = () => copyText(prompt, ok => toast(ok ? L("Kopiert. Jetzt bei Claude einfügen.", "Copied. Now paste it to Claude.") : L("Kopieren ging nicht", "Couldn't copy")));
   const out = $("#cbOut");
   const edit = (st, fromClaude) => {

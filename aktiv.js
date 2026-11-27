@@ -200,15 +200,17 @@ function bindInput(key, opt = {}) {
   return ta;
 }
 
-/* ---------- copy / share helpers ---------- */
+/* ---------- copy helper: every Claude request is copied (no Share). The tapped button shows "Copied ✓". ---------- */
+let copyBtn = null;
+document.addEventListener("click", e => { const b = e.target.closest && e.target.closest("button"); if (b) copyBtn = b; }, true);
 function copyText(text, onDone) {
-  const fall = () => { const t = document.createElement("textarea"); t.value = text; t.style.position = "fixed"; t.style.opacity = "0"; document.body.appendChild(t); t.select(); let ok = false; try { ok = document.execCommand("copy"); } catch (e) { } t.remove(); onDone(ok); };
-  try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => onDone(true), fall); else fall(); } catch (e) { fall(); }
+  const b = copyBtn;
+  const done = ok => { if (ok && b && b.isConnected && !b.dataset.cpOld) { b.dataset.cpOld = b.innerHTML; b.innerHTML = "✓ " + L("Kopiert", "Copied"); b.classList.add("copied"); setTimeout(() => { if (b.isConnected) { b.innerHTML = b.dataset.cpOld; b.classList.remove("copied"); } delete b.dataset.cpOld; }, 3000); } onDone(ok); };
+  const fall = () => { const t = document.createElement("textarea"); t.value = text; t.style.position = "fixed"; t.style.opacity = "0"; document.body.appendChild(t); t.select(); let ok = false; try { ok = document.execCommand("copy"); } catch (e) { } t.remove(); done(ok); };
+  try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done(true), fall); else fall(); } catch (e) { fall(); }
 }
-function shareText(text) {
-  try { if (navigator.share) { navigator.share({ text }).catch(() => { }); return true; } } catch (e) { }
-  return false;
-}
+// Damian only wants Copy: the share sheet is never opened, so every caller falls through to copyText
+function shareText(text) { return false; }
 
 /* ---------- the Claude round trip and the atoms live in atome.js ---------- */
 
@@ -239,7 +241,7 @@ function aktiv() {
     ${item("mG", "Gr", L("Grammatik-Trainer", "Grammar trainer"), L("A1, A2 und B1, im Tab Grammatik", "A1, A2 and B1, in the Grammar tab"))}
    </div>
    ${typeof fluencyMenu === "function" ? fluencyMenu() : ""}
-   <details class="fold"><summary>${L("So funktioniert die Korrektur", "How correction works")}</summary><div class="in"><p class="small" style="margin:0">${L("Nach dem Sprechen oder Schreiben tippst du auf „Teilen“ oder „Kopieren“. Die App macht daraus eine fertige Anfrage für Claude. Claude antwortet mit Erklärungen und einem Block mit KORREKTUR, FEHLERMUSTER und UMFORMEN. Diese Antwort fügst du wieder ein, und die App speichert den Text als Atom. Atome wiederholst du nach 1, 3, 7, 16 und 35 Tagen, zuerst aus dem Gedächtnis, später umgeformt und am Ende ganz frei.", "After speaking or writing, tap “Share” or “Copy”. The app turns it into a ready-made request for Claude. Claude replies with explanations and a block with KORREKTUR, FEHLERMUSTER and UMFORMEN. You paste that reply back and the app saves the text as an atom. You review atoms after 1, 3, 7, 16 and 35 days: first from memory, later transformed, and finally completely freely.")}</p></div></details>`;
+   <details class="fold"><summary>${L("So funktioniert die Korrektur", "How correction works")}</summary><div class="in"><p class="small" style="margin:0">${L("Nach dem Sprechen oder Schreiben tippst du auf „Kopieren“. Die App macht daraus eine fertige Anfrage für Claude. Claude antwortet mit Erklärungen und einem Block mit KORREKTUR, FEHLERMUSTER und UMFORMEN. Diese Antwort fügst du wieder ein, und die App speichert den Text als Atom. Atome wiederholst du nach 1, 3, 7, 16 und 35 Tagen, zuerst aus dem Gedächtnis, später umgeformt und am Ende ganz frei.", "After speaking or writing, tap “Copy”. The app turns it into a ready-made request for Claude. Claude replies with explanations and a block with KORREKTUR, FEHLERMUSTER and UMFORMEN. You paste that reply back and the app saves the text as an atom. You review atoms after 1, 3, 7, 16 and 35 days: first from memory, later transformed, and finally completely freely.")}</p></div></details>`;
   shell(L("Aktiv", "Active"), body, { redraw: aktiv, noLevel: true });
   const h = $("#hAtoms"); if (h) h.onclick = () => startAtomReview(atomsDue().map(a => a.id));
   $("#mSp").onclick = () => spHub(); $("#mSw").onclick = () => swHub(); $("#mAt").onclick = () => atomsHub();

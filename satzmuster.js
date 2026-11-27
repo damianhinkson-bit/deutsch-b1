@@ -182,19 +182,17 @@ function smFetch(ids, back) {
   const atoms = ids.map(atomById).filter(Boolean);
   if (!atoms.length) { back(); return; }
   const prompt = smFetchPrompt(atoms);
-  const canShare = (() => { try { return !!navigator.share; } catch (e) { return false; } })();
   const body = `<p class="muted" style="margin-top:4px">${L("Claude macht aus deinen eigenen Sätzen Satzmuster, am liebsten an Stellen, an denen du Fehler machst.", "Claude turns your own sentences into patterns, preferably at the spots where you make mistakes.")}</p>
     <div class="hl"><span class="lab">${L("In dieser Anfrage", "In this request")}</span>${atoms.map(a => `<div style="font-weight:700">${esc(a.t)}</div>`).join("")}</div>
     <div class="cb">
     <div class="step"><span class="n">1</span><div class="b"><b>${L("An Claude senden", "Send to Claude")}</b>
-      <div class="row2">${canShare ? `<button class="btn petrol" id="smShare">${L("Teilen", "Share")}</button>` : ""}<button class="btn ${canShare ? "ghost" : "petrol"}" id="smCopy">${L("Kopieren", "Copy")}</button></div></div></div>
+      <button class="btn petrol" id="smCopy" style="margin-top:10px">${L("Kopieren", "Copy")}</button></div></div>
     <div class="step"><span class="n">2</span><div class="b"><b>${L("Antwort einfügen", "Paste the reply")}</b>
       <textarea class="ta2" id="smPaste" placeholder="${L("Claudes ganze Antwort hier einfügen", "Paste Claude's whole reply here")}"></textarea>
       <button class="btn primary" id="smUse">${L("Muster übernehmen", "Use these patterns")}</button></div></div></div>`;
   shell(L("Satzmuster holen", "Get patterns"), body, { back: L("Zurück", "Back"), backTo: "aktiv" });
   $("#back").onclick = back;
   const cp = () => copyText(prompt, ok => toast(ok ? L("Kopiert. Jetzt bei Claude einfügen.", "Copied. Now paste it to Claude.") : L("Kopieren ging nicht", "Couldn't copy")));
-  const sh = $("#smShare"); if (sh) sh.onclick = () => { if (!shareText(prompt)) cp(); };
   $("#smCopy").onclick = cp;
   $("#smUse").onclick = () => {
     const per = smReadReply($("#smPaste").value, atoms);
@@ -363,14 +361,13 @@ function patSmFetch(pids, back, first) {
   const ps = pids.map(id => DB.pats[id]).filter(Boolean);
   if (!ps.length) { back(); return; }
   const prompt = patSmPrompt(pids.filter(id => DB.pats[id]));
-  const canShare = (() => { try { return !!navigator.share; } catch (e) { return false; } })();
   const others = first ? patsWithoutSm().filter(id => !pids.includes(id)) : [];
   const body = `<p class="muted" style="margin-top:4px">${first ? L("Für dieses Fehlermuster gibt es noch keine Satzmuster. ", "This mistake pattern has no swap drills yet. ") : ""}${L("Claude macht sie aus deinen eigenen Sätzen mit diesem Fehler: Die Stelle, die wechselt, ist genau die Stelle deines Fehlers.", "Claude makes them from your own sentences with this mistake: the part that swaps is exactly where you made the mistake.")}</p>
     <div class="hl"><span class="lab">${L("In dieser Anfrage", "In this request")}</span>${pids.map(id => `<div style="font-weight:700">${esc(patLabel(id))}</div>`).join("")}</div>
     ${others.length ? `<button class="btn ghost" id="psAll">${L(`Alle ${Math.min(6, others.length + pids.length)} Fehlermuster ohne Satzmuster in eine Anfrage`, `All ${Math.min(6, others.length + pids.length)} mistake patterns without swap drills in one request`)}</button>` : ""}
     <div class="cb">
     <div class="step"><span class="n">1</span><div class="b"><b>${L("An Claude senden", "Send to Claude")}</b>
-      <div class="row2">${canShare ? `<button class="btn petrol" id="psShare">${L("Teilen", "Share")}</button>` : ""}<button class="btn ${canShare ? "ghost" : "petrol"}" id="psCopy">${L("Kopieren", "Copy")}</button></div></div></div>
+      <button class="btn petrol" id="psCopy" style="margin-top:10px">${L("Kopieren", "Copy")}</button></div></div>
     <div class="step"><span class="n">2</span><div class="b"><b>${L("Antwort einfügen", "Paste the reply")}</b>
       <textarea class="ta2" id="psPaste" placeholder="${L("Claudes ganze Antwort hier einfügen", "Paste Claude's whole reply here")}"></textarea>
       <button class="btn primary" id="psUse">${L("Muster übernehmen", "Use these patterns")}</button></div></div></div>`;
@@ -378,7 +375,6 @@ function patSmFetch(pids, back, first) {
   $("#back").onclick = back;
   const all = $("#psAll"); if (all) all.onclick = () => patSmFetch(pids.concat(others).slice(0, 6), back);
   const cp = () => copyText(prompt, ok => toast(ok ? L("Kopiert. Jetzt bei Claude einfügen.", "Copied. Now paste it to Claude.") : L("Kopieren ging nicht", "Couldn't copy")));
-  const sh = $("#psShare"); if (sh) sh.onclick = () => { if (!shareText(prompt)) cp(); };
   $("#psCopy").onclick = cp;
   $("#psUse").onclick = () => {
     const per = smReadReply($("#psPaste").value, ps);
