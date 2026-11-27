@@ -248,15 +248,30 @@ function aktiv() {
   $("#mG").onclick = () => go("gram");
   if (typeof bindFluencyMenu === "function") bindFluencyMenu();
 }
-function aktivHome() {
-  const ad = atomsDue().length, vD = deckDueCount("v"), rD = deckDueCount("r"), tot = ad + vD + rD;
-  const bits = [];
-  if (ad) bits.push(ad === 1 ? L("1 Atom", "1 atom") : L(`${ad} Atome`, `${ad} atoms`));
-  if (vD) bits.push(vD === 1 ? L("1 Verb", "1 verb") : L(`${vD} Verben`, `${vD} verbs`));
-  if (rD) bits.push(rD === 1 ? L("1 Redemittel", "1 phrase") : L(`${rD} Redemittel`, `${rD} phrases`));
-  return `<button class="hero ghosty" id="goAktiv"><span class="ic">${tot || "🎙"}</span><span><span class="tt">${tot ? L("Aktiv: fällig", "Active: due") : L("Sprechen & schreiben", "Speak & write")}</span><span class="ss">${tot ? esc(bits.join(" · ")) : L("Sprechen, Schreiben, Atome, Verben und Redemittel.", "Speaking, writing, atoms, verbs and phrases.")}</span></span></button>`;
+/* ---------- Today page: Atome button and quick buttons ---------- */
+function atomeHome() {
+  const due = atomsDue(), n = due.reduce((k, a) => k + dueSents(a).length, 0), act = DB.atoms.filter(a => !a.done).length;
+  const ss = n ? L(`${n} Sätze aus ${due.length} ${due.length === 1 ? "Atom" : "Atomen"} fällig`, `${n} sentences from ${due.length} ${due.length === 1 ? "atom" : "atoms"} due`)
+    : act ? L(`Heute nichts fällig · ${act} aktiv`, `Nothing due today · ${act} active`) : L("Deine korrigierten Texte als Wiederholung", "Your corrected texts, for review");
+  return `<button class="hero ghosty" id="goAtome"><span class="ic">${n || "✦"}</span><span><span class="tt">${L("Atome", "Atoms")}</span><span class="ss">${esc(ss)}</span></span></button>`;
 }
-function bindAktivHome() { const b = $("#goAktiv"); if (b) b.onclick = () => go("aktiv"); }
+function bindAtomeHome() { const b = $("#goAtome"); if (b) b.onclick = () => { route = "aktiv"; renderTabs(); atomsHub(); window.scrollTo(0, 0); syncGuard(); }; }
+function quickHome() {
+  const tile = (id, ic, tt, ss) => `<button class="qk" id="${id}"><span class="qi">${ic}</span><span class="qt">${tt}</span><span class="qs">${ss}</span></button>`;
+  return `<div class="qgrid">
+    ${tile("qSp", "🎙", L("Sprechen", "Speaking"), L(`${SPRECHEN.length} Aufgaben`, `${SPRECHEN.length} tasks`))}
+    ${typeof vnPage === "function" ? tile("qVn", "▶", L("Sprachnotizen", "Voice notes"), `<span id="qVnN">${L("MP3s anhören", "Listen to MP3s")}</span>`) : ""}
+    ${tile("qGr", "Gr", L("Grammatik gemischt", "Grammar: mixed"), L("Alle Regeln deiner Stufe", "All rules at your level"))}
+    ${tile("qWl", "≡", L("Wortliste", "Word list"), L(`${LW().length} Wörter`, `${LW().length} words`))}
+  </div>`;
+}
+function bindQuickHome() {
+  const sub = (r, fn) => { route = r; renderTabs(); fn(); window.scrollTo(0, 0); syncGuard(); };
+  const sp = $("#qSp"); if (sp) sp.onclick = () => sub("aktiv", spHub);
+  const vn = $("#qVn"); if (vn) { vn.onclick = () => vnPage(() => go("home"), L("Heute", "Today")).then(() => setTimeout(syncGuard, 0)); vnAll().then(l => { const n = $("#qVnN"); if (n && l.length) n.textContent = L(`${l.length} gespeichert`, `${l.length} saved`); }).catch(() => { }); }
+  const gr = $("#qGr"); if (gr) gr.onclick = () => sub("gram", () => gram("mix"));
+  const wl = $("#qWl"); if (wl) wl.onclick = () => { listTheme = "all"; go("liste"); };
+}
 function backToHub() { go("aktiv"); }
 
 /* =================================================================== SPRECHEN */

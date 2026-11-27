@@ -1,4 +1,4 @@
-const CACHE="b1-wortschatz-v47";
+const CACHE="b1-wortschatz-v48";
 const VOICE_CACHE="b1-voice-v1";
 const META_CACHE="b1-meta"; // the next atom due day, written by the app (dashboard.js) for the reminder // the MP3 voice (tts/): downloaded by the app on first use, kept across updates
 const CORE=["./","index.html","shk-data.js","aktiv-data.js","shk-aktiv.js","aktiv.js","atome.js","sp-phrasen.js","satzmuster.js","fluency-data.js","fluency.js","sprechen.js","tts-mp3.js","voicenotes.js","bilder.js","fotos.js","dashboard.js","manifest.webmanifest","icon-192.png","icon-512.png",

@@ -2927,6 +2927,8 @@ applyTheme();
 document.documentElement.lang = lang();
 try { history.replaceState({ name: "home" }, ""); } catch (e) {}
 render();
+/* the B1 app's Today page can open mixed practice straight away */
+try { if (new URLSearchParams(location.search).get("start") === "mix") go({ name: "setup", rules: levelRules().map(r => r.id), mix: true }); } catch (e) {}
 /* built into the B1 app: its service worker caches this page */
 // test hook
 window.__a2 = { RULES: ALL_RULES, checkText, norm, state: () => state, cur: () => session && session.queue[session.pos], trTask, L };

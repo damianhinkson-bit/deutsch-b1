@@ -28,6 +28,29 @@
   .wpat:first-child{border-top:none}
   .wpat span{white-space:nowrap;font-weight:800}
   .shortcuts{margin-top:10px}
+  .wk2{padding:18px 18px 14px;border-top:4px solid var(--petrol);margin-top:12px}
+  .wk2 .top{align-items:flex-start}
+  .wk2 .tt{display:block;font-size:20px;letter-spacing:-.01em}
+  .wk2 .rg{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-top:1px}
+  .wk2 .pill{font-size:12px;padding:4px 10px;border-radius:99px;background:var(--surface-2)}
+  .wk2 .pill.g-up{background:var(--good-tint)} .wk2 .pill.g-down{background:var(--bad-tint)}
+  .wbars{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;height:58px;margin:14px 0 4px}
+  .wbars .wd{display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;gap:3px}
+  .wbars i{display:block;width:62%;max-width:22px;background:var(--petrol-soft);border-radius:4px 4px 2px 2px;opacity:.8}
+  .wbars i.z{height:2px!important;background:var(--line);opacity:1}
+  .wbars .now i{background:var(--amber);opacity:1}
+  .wbars em{font-style:normal;font-size:11px;font-weight:700;color:var(--muted);line-height:1}
+  .wbars .now em{color:var(--ink)}
+  .kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+  .kpis .k{background:var(--surface-2);border-radius:var(--r-md);padding:10px 12px}
+  .kpis b{display:block;font-size:22px;font-weight:800;line-height:1.15;font-variant-numeric:tabular-nums;color:var(--ink)}
+  .kpis small{font-size:12.5px;font-weight:600;color:var(--muted)}
+  .wk2 .ft{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:13.5px;font-weight:800;color:var(--petrol-soft)}
+  .qgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+  .qk{display:flex;flex-direction:column;align-items:flex-start;text-align:left;background:var(--surface);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:14px;min-height:96px}
+  .qk .qi{font-size:18px;font-weight:800;width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:var(--surface-2);color:var(--petrol-soft)}
+  .qk .qt{font-weight:800;font-size:15px;margin-top:8px;line-height:1.2;color:var(--ink)}
+  .qk .qs{font-size:12.5px;color:var(--muted);margin-top:2px}
   `;
   const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
 })();
@@ -82,9 +105,18 @@ function wkVerdictText(v) {
 /* ---------- card on Today ---------- */
 function weekCard() {
   try {
-    const c = wkCompare(), s = c.cur;
-    return `<button class="wk" id="wkCard"><div class="top"><span class="tt">${L("Deine Woche", "Your week")}</span><span class="vd g-${c.verdict || "same"}">${wkVerdictText(c.verdict)}</span></div>
-      <div class="ln"><span><b>${s.practised}/7</b> ${L("Tage", "days")}</span>${s.secGain != null ? `<span><b>${s.secGain >= 0 ? "+" : ""}${s.secGain}</b> ${L("sichere Wörter", "secure words")}</span>` : `<span><b>${s.words}</b> ${L("neue Wörter", "new words")}</span>`}<span>${L("Atome", "Atoms")} <b>${wkPct(s.atomPct)}</b></span><span>${L("Fehlermuster", "Mistakes")} <b>${wkPct(s.patPct)}</b></span></div></button>`;
+    const c = wkCompare(), s = c.cur, t = today();
+    const fmt = d => new Date(d + "T12:00").toLocaleDateString(EN() ? "en-GB" : "de-DE", { day: "numeric", month: "short" });
+    const dl = d => new Date(d + "T12:00").toLocaleDateString(EN() ? "en-GB" : "de-DE", { weekday: "narrow" });
+    const max = Math.max(1, ...s.days.map(d => s.act[d]));
+    const bars = s.days.map(d => { const n = s.act[d]; return `<span class="wd ${d === t ? "now" : ""}"><i class="${n ? "" : "z"}" style="height:${n ? Math.max(12, Math.round(n / max * 100)) : 0}%"></i><em>${esc(dl(d))}</em></span>`; }).join("");
+    const kpi = (v, lbl, chg) => `<span class="k"><b>${v}</b><small>${lbl} ${wkChg(chg)}</small></span>`;
+    const sec = s.secGain != null ? kpi((s.secGain >= 0 ? "+" : "") + s.secGain, L("sichere Wörter", "secure words"), c.m.sec) : kpi(s.words, L("neue Wörter", "new words"), null);
+    return `<button class="wk wk2" id="wkCard">
+      <div class="top"><span><span class="tt">${L("Deine Woche", "Your week")}</span><span class="rg">${esc(fmt(s.days[0]))} – ${esc(fmt(t))}</span></span><span class="vd pill g-${c.verdict || "same"}">${wkVerdictText(c.verdict)}</span></div>
+      <div class="wbars" aria-hidden="true">${bars}</div>
+      <div class="kpis">${kpi(`${s.practised}/7`, L("Tage geübt", "days practised"), c.m.days)}${sec}${kpi(wkPct(s.atomPct), L("Atome richtig", "atoms right"), c.m.atom)}${kpi(wkPct(s.patPct), L("Fehlermuster", "mistake patterns"), c.m.pat)}</div>
+      <div class="ft">${L("Wochenbericht ansehen", "See the weekly report")} ›</div></button>`;
   } catch (e) { return ""; }
 }
 function bindWeekCard() { const b = $("#wkCard"); if (b) b.onclick = () => weekPage(); }

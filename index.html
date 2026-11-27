@@ -460,10 +460,10 @@ function shell(title,body,opts={}){
 }
 
 /* ---------- GRAMMATIK: the grammar trainer, built in ---------- */
-function gram(){
+function gram(start){
   redraw=null;
   document.body.classList.add("gram-on");
-  $("#app").innerHTML=`<iframe class="gframe" src="grammatik/index.html?lang=${DB.lang}" title="${L("Grammatik-Trainer","Grammar trainer")}"></iframe>`;
+  $("#app").innerHTML=`<iframe class="gframe" src="grammatik/index.html?lang=${DB.lang}${start==="mix"?"&start=mix":""}" title="${L("Grammatik-Trainer","Grammar trainer")}"></iframe>`;
 }
 
 window.addEventListener("message",e=>{ if(e.origin!==location.origin||!e.data||!e.data.deutschLang) return; const l=e.data.deutschLang==="en"?"en":"de"; if(DB.lang!==l){ DB.lang=l; save(); renderTabs(); } });
@@ -482,12 +482,11 @@ function home(){
   const body=`
    <div class="date">${esc(dateTxt)}</div>
    ${typeof weekCard==="function"?weekCard():""}
-   <button class="row-sw" id="shkSw" aria-pressed="${shkOn()}" style="margin:0 0 4px"><span class="tx"><b>${L("Handwerker-Modus (SHK)","Handyman mode (SHK)")}</b><span class="muted small">${shkOn()?L("An: Wärmepumpe, Heizung, Klima, Wasser. Jedes 3. neue Wort, Sprechen und Claude aus deinem Beruf.","On: heat pumps, heating, AC, water. Every 3rd new word, speaking and Claude from your trade."):L("Wärmepumpe, Heizung, Klima, Wasser: Wörter, Sprechen und Grammatik aus deinem Beruf.","Heat pumps, heating, AC, water: words, speaking and grammar from your trade.")}</span></span><span class="sw ${shkOn()?"on":""}"><i></i></span></button>
    <button class="hero alt" id="goNew" ${nextIds.length?"":"disabled"}><span class="ic">${left||"+"+PACK}</span><span><span class="tt">${left?L("Neue Wörter","New words"):L("Mehr neue Wörter","More new words")}</span><span class="ss">${newSub}</span></span></button>
    ${PICK()?`<p class="muted small" style="margin:6px 2px 0">${L("Neue Wörter heute aus: ","Today's new words from: ")}<b>${esc(THEME(PICK()))}</b> · ${L("ändern in Mehr","change in More")}</p>`:""}
    ${introducedSince(today()).length?`<button class="hero ghosty" id="drillT"><span class="ic">${introducedSince(today()).length}</span><span><span class="tt">${L("Heutige neue Wörter üben","Drill today's new words")}</span><span class="ss">${L("In jeder Art: Paare, Hören, Artikel, Schreiben, Verstehen.","Every way: pairs, listening, articles, writing, meaning.")}</span></span></button>`:""}
-   ${aktivHome()}
-   <div class="row2 shortcuts"><button class="btn petrol" id="scMix">✦ ${L("Atome gemischt","Atoms: mixed")}</button><button class="btn petrol" id="scGram">${L("Grammatik","Grammar")}</button></div>
+   ${atomeHome()}
+   ${quickHome()}
    <div class="strip"><div><b>${started}</b><span>${L("von","of")} ${LW().length} ${L("begonnen","started")}</span></div><div><b>${mastered}</b><span>${L("sicher (Stufe 4–5)","secure (level 4–5)")}</span></div><div><b>${DB.streak.last===today()||DB.streak.last===addDays(today(),-1)?DB.streak.n:0}</b><span>${L("Tage am Stück","days in a row")}</span></div></div>
    <div class="h2">${L("Tag","Day")} ${Math.min(dayNo,totalDays)} ${L("von","of")} ${totalDays} · ${L("Themen","Themes")}</div>
    <div>${themeOrder(DB.level).concat(["klein"]).map(t=>{const p=themeProgress(t);return p.n?meterRow(t,p):"";}).join("")}</div>
@@ -496,11 +495,8 @@ function home(){
   shell(`${LV()}-Wortschatz`,body,{redraw:home});
   $("#goNew").onclick=()=>startNew();
   const dt=$("#drillT"); if(dt) dt.onclick=drillToday;
-  bindAktivHome();
+  bindAtomeHome(); bindQuickHome();
   if(typeof bindWeekCard==="function") bindWeekCard();
-  $("#scMix").onclick=()=>{ route="aktiv"; renderTabs(); drillHub(); syncGuard(); };
-  $("#scGram").onclick=()=>go("gram");
-  $("#shkSw").onclick=()=>{DB.shk=!DB.shk;save();toast(DB.shk?L("Handwerker-Modus an","Handyman mode on"):L("Handwerker-Modus aus","Handyman mode off"));home();};
   document.querySelectorAll("[data-theme-open]").forEach(b=>b.onclick=()=>{listTheme=b.dataset.themeOpen;go("liste");});
   document.querySelectorAll("[data-mv]").forEach(b=>b.onclick=()=>{ const sc=$("#app").scrollTop, wy=window.scrollY; moveTheme(b.dataset.t,+b.dataset.mv); home(); $("#app").scrollTop=sc; window.scrollTo(0,wy); });
   $("#ordBtn").onclick=()=>{ editOrder=!editOrder; home(); };
@@ -767,6 +763,8 @@ function mehr(){
    <div class="h2">${L("Sprache der App","App language")}</div>
    <div class="ctl"><div class="ctl-t"><b>${L("Knöpfe und Anleitungen","Buttons and instructions")}</b><span class="muted small">${L("Die Wörter, die du lernst, bleiben immer Deutsch.","The words you're learning always stay German.")}</span></div>
    <div class="seg" role="group"><button data-lang="de" aria-pressed="${!EN()}">Deutsch</button><button data-lang="en" aria-pressed="${EN()}">English</button></div></div>
+   <div class="h2">${L("Beruf","Your trade")}</div>
+   <button class="row-sw" id="shkSw" aria-pressed="${shkOn()}"><span class="tx"><b>${L("Handwerker-Modus (SHK)","Handyman mode (SHK)")}</b><span class="muted small">${shkOn()?L("An: Wärmepumpe, Heizung, Klima, Wasser. Jedes 3. neue Wort, Sprechen und Claude aus deinem Beruf.","On: heat pumps, heating, AC, water. Every 3rd new word, speaking and Claude from your trade."):L("Wärmepumpe, Heizung, Klima, Wasser: Wörter, Sprechen und Grammatik aus deinem Beruf.","Heat pumps, heating, AC, water: words, speaking and grammar from your trade.")}</span></span><span class="sw ${shkOn()?"on":""}"><i></i></span></button>
    <div class="h2">${L("Neue Wörter","New words")} (${LV()})</div>
    <div class="pick-l" style="margin-top:0">${L("Neue Wörter heute aus","Today's new words from")}</div>
    <div class="chips" id="pickRow"><button class="chip" data-pick="" aria-pressed="${!PICK()}">${L("Automatisch","Automatic")}</button>${levelThemes().map(t=>{const n=themeLeft(t);return n?`<button class="chip" data-pick="${t}" aria-pressed="${PICK()===t}">${esc(THEME(t))} · ${n}</button>`:"";}).join("")}</div>
@@ -797,6 +795,7 @@ function mehr(){
   shell(L("Mehr","More"),body,{redraw:mehr}); bindSayToggle(); bindMissLevel(mehr); bindFotoBackup();
   if(typeof bindRemind==="function") bindRemind(mehr); if(typeof bindVoiceCtl==="function") bindVoiceCtl(); if(typeof bindVnMehr==="function") bindVnMehr();
   $("#pauseSw").onclick=()=>{DB.pause=!DB.pause;save();mehr();};
+  $("#shkSw").onclick=()=>{DB.shk=!DB.shk;save();toast(DB.shk?L("Handwerker-Modus an","Handyman mode on"):L("Handwerker-Modus aus","Handyman mode off"));const sy=window.scrollY;mehr();window.scrollTo(0,sy);};
   const st=$("#sndTest"); if(st) st.onclick=()=>{ if(!say("Guten Morgen")) toast(NO_SOUND()); };
   document.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{ const t=b.dataset.pick; if(t) DB.pick[DB.level]=t; else delete DB.pick[DB.level]; save(); const sy=window.scrollY; mehr(); window.scrollTo(0,sy); });
   const pk=$("#pickRow [aria-pressed=\"true\"]"), pr0=$("#pickRow"); if(pk&&pr0) pr0.scrollLeft=Math.max(0,pk.offsetLeft-pr0.offsetLeft-(pr0.clientWidth-pk.offsetWidth)/2);
