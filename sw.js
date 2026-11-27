@@ -1,7 +1,7 @@
-const CACHE="b1-wortschatz-v46";
+const CACHE="b1-wortschatz-v47";
 const VOICE_CACHE="b1-voice-v1";
 const META_CACHE="b1-meta"; // the next atom due day, written by the app (dashboard.js) for the reminder // the MP3 voice (tts/): downloaded by the app on first use, kept across updates
-const CORE=["./","index.html","shk-data.js","aktiv-data.js","shk-aktiv.js","aktiv.js","atome.js","sp-phrasen.js","satzmuster.js","fluency-data.js","fluency.js","tts-mp3.js","voicenotes.js","bilder.js","fotos.js","dashboard.js","manifest.webmanifest","icon-192.png","icon-512.png",
+const CORE=["./","index.html","shk-data.js","aktiv-data.js","shk-aktiv.js","aktiv.js","atome.js","sp-phrasen.js","satzmuster.js","fluency-data.js","fluency.js","sprechen.js","tts-mp3.js","voicenotes.js","bilder.js","fotos.js","dashboard.js","manifest.webmanifest","icon-192.png","icon-512.png",
   "grammatik/index.html","grammatik/shk-items.js","grammatik/fonts/bricolage.woff2"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE&&k!==VOICE_CACHE&&k!==META_CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});

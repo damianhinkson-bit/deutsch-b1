@@ -670,6 +670,7 @@ function atomDetail(id, editing) {
     ${hist ? `<p class="muted small">${hist}</p>` : ""}
     ${a.sents.some(x => isLive(x) && !x.pend) ? `<button class="btn primary" id="now">${L("Jetzt wiederholen", "Review now")}</button>` : ""}
     ${a.done ? "" : `<button class="btn ${a.paused ? "primary" : "ghost"}" id="pz">${a.paused ? L("Fortsetzen", "Resume") : L("Pausieren", "Pause")}</button>`}
+    ${typeof sdForAtom === "function" && a.sents.some(x => !x.pend) ? `<button class="btn petrol" id="sdA">${L("Dieses Atom laut sprechen", "Speak this atom out loud")}</button>` : ""}
     <button class="btn petrol" id="drA">${L("Dieses Atom gemischt üben", "Mixed practice for this atom")}</button>
     <button class="btn ghost" id="smA">${(a.pm || []).length ? L(`Satzmuster üben (${a.pm.length})`, `Pattern drills (${a.pm.length})`) : L("Satzmuster von Claude holen", "Get pattern drills from Claude")}</button>
     <div class="row2"><button class="btn ghost" id="edit">${L("Bearbeiten", "Edit")}</button><button class="btn ghost" id="del">${L("Löschen", "Delete")}</button></div>`;
@@ -681,6 +682,7 @@ function atomDetail(id, editing) {
   const nw = $("#now"); if (nw) nw.onclick = () => startAtomReview([id], true);
   const pz = $("#pz"); if (pz) pz.onclick = () => { if (a.paused) { resumeAtom(a); toast(a.box === 0 ? L("Fortgesetzt. Die Boxen sind voll: die Sätze warten auf Platz.", "Resumed. The boxes are full, so the sentences wait for room.") : L("Fortgesetzt", "Resumed")); } else { pauseAtom(a); toast(L("Pausiert", "Paused")); } atomDetail(id); };
   $("#drA").onclick = () => drillHub(id);
+  const sdA = $("#sdA"); if (sdA) sdA.onclick = () => sdForAtom(id);
   $("#smA").onclick = () => (a.pm || []).length ? smHub(id) : smFetch([id], () => atomDetail(id));
   $("#edit").onclick = () => atomDetail(id, true);
   const um = $("#upMake");

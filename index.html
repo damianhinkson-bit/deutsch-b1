@@ -677,6 +677,7 @@ function ueben(){
   const dueN=dueIds().length, knownN=LW().filter(w=>isKnown(w.id)).length;
   const body=`<div class="menu" style="margin-top:4px">
      <button class="item" id="openList"><span class="ic">≡</span><span class="tx"><span class="tt">${L(`Wortliste ${LV()}`,`Word list ${LV()}`)}</span><span class="ss">${L(`Alle ${LW().length} Wörter. Markiere, was du schon kannst (${knownN} bekannt).`,`All ${LW().length} words. Mark the ones you already know (${knownN} known).`)}</span></span></button>
+     ${typeof sdFromPractice==="function"?`<button class="item" id="openSd"><span class="ic">🎙</span><span class="tx"><span class="tt">${L("Sprechtraining","Speaking drill")}</span><span class="ss">${L("Deine Atom-Sätze laut sagen, bis sie sitzen. Aus einer Box oder einem Atom.","Say your atom sentences out loud until they're right. From a box or an atom.")}</span></span></button>`:""}
      <button class="item" id="openRev" ${dueN?"":"disabled"}><span class="ic">${dueN}</span><span class="tx"><span class="tt">${L("Wiederholen","Review")}</span><span class="ss">${dueN?L("Fällige Wörter, wenn du möchtest.","Due words, if you want to."):L("Nichts fällig.","Nothing due.")}</span></span></button>
    </div>
    <div class="h2">${L("Frei üben","Free practice")}</div>
@@ -693,6 +694,7 @@ function ueben(){
    ${!TTS?`<p class="muted small">${L("Hören ist in diesem Browser nicht verfügbar.","Listening isn't available in this browser.")}</p>`:""}`;
   shell(L("Üben","Practice"),body,{redraw:ueben});
   $("#openList").onclick=()=>go("liste");
+  { const sd=$("#openSd"); if(sd) sd.onclick=sdFromPractice; }
   $("#openRev").onclick=()=>{ if(dueIds().length) startReview(); };
   document.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{pr[b.dataset.k]=b.dataset.v;ueben();});
   bindMissLevel(ueben);
@@ -814,6 +816,7 @@ function mehr(){
 <script src="satzmuster.js"></script>
 <script src="fluency-data.js"></script>
 <script src="fluency.js"></script>
+<script src="sprechen.js"></script>
 <script src="tts-mp3.js"></script>
 <script src="voicenotes.js"></script>
 <script src="bilder.js"></script>
